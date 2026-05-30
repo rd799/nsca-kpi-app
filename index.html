@@ -2393,6 +2393,7 @@ async function initApp(){
   const authed=await checkAuth();
   if(authed){
     showApp();
+    renderKqMetricRows(); // render metric rows sớm, trước khi tab config mở
     loadGradeConfigUI();
     const isAdmin=authState?.profile?.role==='admin';
     window._isAdmin=isAdmin;
@@ -3126,4 +3127,4 @@ async function exportBonusExcel(){
     </div>
     <div id="sheetModalStatus" style="font-size:11px;min-height:18px;margin-bottom:12px;color:var(--m)"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn bp" style="flex:1" onclick="sheetModalSync('all')">📤 Đẩy KPI + Đầu vi�
+      <button class=
