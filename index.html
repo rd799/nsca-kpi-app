@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KPI Phòng R&D 2026</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
 // ── KPI Quota config 3-tier (Kém / Tiêu chuẩn / Vượt) ───────────────
 const KQ_METRICS=[
   {id:'task',       icon:'📦', name:'Sản lượng task',      unit:'task/tuần',           dir:'high', def:{quota:5,  below:60, above:120, weight:30}},
@@ -3127,4 +3128,4 @@ async function exportBonusExcel(){
     </div>
     <div id="sheetModalStatus" style="font-size:11px;min-height:18px;margin-bottom:12px;color:var(--m)"></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class=
+  
