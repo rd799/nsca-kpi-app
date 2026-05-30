@@ -1903,6 +1903,7 @@ function clearExcelPreview(){
 }
 async function submitExcelData(){
   if(!_excelRows.length){toast('Không có dữ liệu!',true);return;}
+  _excelRowsSubmitted=[..._excelRows]; // cache trước khi clear
   let ok=0,fail=0;
   for(const row of _excelRows){
     try{
@@ -1913,6 +1914,20 @@ async function submitExcelData(){
   toast(`✅ Nộp ${ok} thành công${fail?`, ❌ ${fail} lỗi`:''} — chờ manager duyệt`);
   clearExcelPreview();
   loadManualKpi();
+  // Đẩy lên Google Sheets nếu URL đã cấu hình
+  if(ok>0) pushManualKpiToSheet(_excelRowsSubmitted||[]);
+}
+// Cache rows for sheet push
+let _excelRowsSubmitted=[];
+async function pushManualKpiToSheet(rows){
+  const url=(localStorage.getItem('rd_sheets_url')||'').trim();
+  if(!url||!rows.length)return;
+  try{
+    await fetch(url,{method:'POST',mode:'no-cors',
+      body:JSON.stringify({type:'manual_kpi',rows,pushedAt:new Date().toISOString()}),
+      headers:{'Content-Type':'application/json'}});
+    toast('📊 Đã đẩy lên Google Sheet!');
+  }catch(e){console.warn('Sheet push failed:',e.message);}
 }
 function downloadKpiTemplate(){
   if(!window.XLSX){toast('Đang tải thư viện Excel, thử lại sau giây lát...',true);return;}
@@ -1928,7 +1943,14 @@ function downloadKpiTemplate(){
   ws['!cols']=[{wch:13},{wch:14},{wch:22},{wch:14},{wch:20},{wch:22},{wch:18},{wch:35}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,'KPI Tháng',ws);
-  XLSX.writeFile(wb,`KPI_Manual_Template_${ym}.xlsx`);
+  // Dùng Blob thay writeFile để tránh lỗi e.indexOf trên một số browser
+  const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  const blob=new Blob([wbout],{type:'application/octet-stream'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`KPI_Manual_Template_${ym}.xlsx`;
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
 }
 
 async function submitManualKpi(){
@@ -2029,10 +2051,13 @@ function renderConfig(){
       </div>
     </div>`;
   });
-  document.getElementById('metricRows').innerHTML=h;
+  const _mr=document.getElementById('metricRows');
+  if(_mr) _mr.innerHTML=h;
 
   // Populate M1 deep panel
-  document.getElementById('m1CfgPanel').innerHTML=`
+  const _m1p=document.getElementById('m1CfgPanel');
+  if(!_m1p) return; // old metric panels removed — skip
+  _m1p.innerHTML=`
     <div class="dcfg-title">⚙️ Cấu hình chi tiết M1 — Hoàn thành đúng hạn</div>
     <div class="dcfg-grid">
       <div>
