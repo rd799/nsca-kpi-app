@@ -16,6 +16,11 @@ const KQ_METRICS=[
   {id:'attendance', icon:'📅', name:'Chuyên cần',          unit:'% ngày đúng giờ',      dir:'high', def:{quota:90, below:60, above:110, weight:5}},
   {id:'unexcused',  icon:'🚫', name:'Vắng không phép',     unit:'lần/tháng',            dir:'low',  def:{quota:0,  below:50, above:110, weight:0}},
   {id:'delegation', icon:'🤝', name:'Giao việc (leader)',  unit:'task giao/tuần',       dir:'high', def:{quota:3,  below:70, above:110, weight:0}},
+  // ── Chỉ tiêu thủ công (nhân viên nhập, manager duyệt) ──────────────────
+  {id:'sang_kien',  icon:'💡', name:'Sáng kiến cải tiến', unit:'sáng kiến/tháng',      dir:'high', def:{quota:1,  below:0,  above:110, weight:0}, manual:true},
+  {id:'chi_phi',    icon:'💰', name:'Chi phí tiết kiệm',  unit:'triệu VND/tháng',      dir:'high', def:{quota:5,  below:0,  above:110, weight:0}, manual:true},
+  {id:'doanh_thu',  icon:'📈', name:'Doanh thu SP mới',   unit:'triệu VND/tháng',      dir:'high', def:{quota:10, below:0,  above:110, weight:0}, manual:true},
+  {id:'tai_lieu',   icon:'📄', name:'Tài liệu kỹ thuật',  unit:'tài liệu/tháng',       dir:'high', def:{quota:2,  below:0,  above:110, weight:0}, manual:true},
 ];
 
 function renderKqMetricRows(){
@@ -559,6 +564,45 @@ select.inp{cursor:pointer}
     </div>
     <div id="kqMetricRows"></div>
   </div>
+  <!-- Chỉ tiêu thủ công: nhân viên nhập / manager duyệt -->
+  <div class="card" id="manualKpiCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div>
+        <div class="ctitle">📋 Chỉ tiêu KPI thủ công</div>
+        <div class="csub">Nhân viên nhập hàng tháng — Manager duyệt để tính vào KPI</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn bs" onclick="loadManualKpi()" title="Tải lại">🔄</button>
+        <button class="btn bp" id="manualKpiSubmitBtn" onclick="submitManualKpi()" style="font-weight:600">📤 Nộp tháng này</button>
+      </div>
+    </div>
+    <!-- Form nhập liệu nhân viên -->
+    <div id="manualKpiForm" style="background:var(--card2);border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid var(--b)">
+      <div style="font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Nhập số liệu tháng <span id="manualKpiMonth"></span></div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+        <div><label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">💡 Sáng kiến cải tiến</label>
+          <input type="number" id="mk_sang_kien" min="0" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--fg);font-size:14px">
+          <div style="font-size:10px;color:var(--m);margin-top:2px">số sáng kiến trong tháng</div></div>
+        <div><label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">💰 Chi phí tiết kiệm (tr.VND)</label>
+          <input type="number" id="mk_chi_phi" min="0" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--fg);font-size:14px">
+          <div style="font-size:10px;color:var(--m);margin-top:2px">triệu đồng tiết kiệm được</div></div>
+        <div><label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">📈 Doanh thu SP mới (tr.VND)</label>
+          <input type="number" id="mk_doanh_thu" min="0" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--fg);font-size:14px">
+          <div style="font-size:10px;color:var(--m);margin-top:2px">từ sản phẩm mới trong tháng</div></div>
+        <div><label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">📄 Tài liệu kỹ thuật</label>
+          <input type="number" id="mk_tai_lieu" min="0" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--fg);font-size:14px">
+          <div style="font-size:10px;color:var(--m);margin-top:2px">số tài liệu ban hành trong tháng</div></div>
+      </div>
+      <textarea id="mk_notes" placeholder="Ghi chú (tuỳ chọn): mô tả ngắn về sáng kiến, tài liệu..." rows="2"
+        style="width:100%;box-sizing:border-box;margin-top:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--fg);font-size:12px;resize:vertical"></textarea>
+    </div>
+    <!-- Danh sách chờ duyệt (admin only) -->
+    <div id="manualKpiApproveSection" class="admin-only">
+      <div style="font-size:11px;font-weight:700;color:var(--m);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Danh sách chờ duyệt</div>
+      <div id="manualKpiList"><div style="text-align:center;color:var(--m);font-size:12px;padding:12px">Nhấn 🔄 để tải</div></div>
+    </div>
+  </div>
+
   <div class="card">
     <div class="ctitle">🏷️ Tên hiển thị thành viên</div>
     <div class="csub">Gán tên thật cho từng username để dễ theo dõi trên bảng KPI</div>
@@ -1047,6 +1091,14 @@ function calcKqScore(r, periodDays){
       actual=r.unexcused_count!=null?r.unexcused_count/months:0; quotaScaled=cfg.quota??0;
     }else if(m.id==='delegation'){
       actual=delegated; quotaScaled=(cfg.quota??3)*weeks;
+    }else if(m.id==='sang_kien'){
+      actual=r.sang_kien||0; quotaScaled=cfg.quota??1;
+    }else if(m.id==='chi_phi'){
+      actual=r.chi_phi||0; quotaScaled=cfg.quota??5;
+    }else if(m.id==='doanh_thu'){
+      actual=r.doanh_thu||0; quotaScaled=cfg.quota??10;
+    }else if(m.id==='tai_lieu'){
+      actual=r.tai_lieu||0; quotaScaled=cfg.quota??2;
     }else continue;
 
     const eps=0.001;
@@ -1726,6 +1778,91 @@ async function autoSaveAll(){
     setTimeout(()=>status.textContent='',5000);
   }catch(e){status.textContent='';console.log('Auto-save:',e.message);}
 }
+// ── Manual KPI (nhân viên nhập / manager duyệt) ─────────────────────────
+function manualKpiPeriodKey(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+function initManualKpiForm(){
+  const el=document.getElementById('manualKpiMonth');
+  if(el){const[y,m]=manualKpiPeriodKey().split('-');el.textContent=`Tháng ${+m}/${y}`;}
+}
+async function loadManualKpi(){
+  initManualKpiForm();
+  const pk=manualKpiPeriodKey();
+  // Load bản nhập của chính mình (nếu có)
+  try{
+    const mine=await api('/api/rd/manual-kpi?period_key='+pk+(window._myUsername?'&username='+encodeURIComponent(window._myUsername):''));
+    if(mine?.length){
+      const r=mine[0];
+      document.getElementById('mk_sang_kien').value=r.sang_kien||0;
+      document.getElementById('mk_chi_phi').value=r.chi_phi||0;
+      document.getElementById('mk_doanh_thu').value=r.doanh_thu||0;
+      document.getElementById('mk_tai_lieu').value=r.tai_lieu||0;
+      document.getElementById('mk_notes').value=r.notes||'';
+      const btn=document.getElementById('manualKpiSubmitBtn');
+      if(btn) btn.innerHTML=r.status==='approved'?'✅ Đã duyệt':r.status==='pending'?'⏳ Chờ duyệt':'📤 Nộp lại';
+    }
+  }catch(e){}
+  // Load danh sách chờ duyệt (admin)
+  if(!window._isAdmin) return;
+  const el=document.getElementById('manualKpiList');
+  if(!el) return;
+  try{
+    el.innerHTML='<div style="text-align:center;padding:12px"><span class="spin"></span></div>';
+    const list=await api('/api/rd/manual-kpi?period_key='+pk);
+    if(!list?.length){el.innerHTML='<div style="text-align:center;color:var(--m);font-size:12px;padding:12px">Chưa có nhân viên nào nộp tháng này</div>';return;}
+    const cols='2fr 1fr 1fr 1fr 1fr 120px';
+    let h=`<div style="display:grid;grid-template-columns:${cols};gap:0 8px;padding:6px 10px;background:var(--card2);border-radius:8px;border:1px solid var(--b);margin-bottom:4px;font-size:10px;font-weight:700;color:var(--m);text-transform:uppercase">
+      <div>Nhân viên</div><div style="text-align:center">Sáng kiến</div><div style="text-align:center">Chi phí TK</div><div style="text-align:center">Doanh thu</div><div style="text-align:center">Tài liệu</div><div style="text-align:center">Trạng thái</div></div>`;
+    list.forEach(r=>{
+      const statusBadge=r.status==='approved'
+        ?'<span style="color:#4ade80;font-size:11px;font-weight:600">✅ Đã duyệt</span>'
+        :r.status==='rejected'
+        ?'<span style="color:#f87171;font-size:11px">❌ Bác</span>'
+        :`<div style="display:flex;gap:4px"><button onclick="approveManualKpi('${r.id}','approved')" style="padding:3px 8px;border-radius:5px;border:1px solid #4ade8060;background:#22c55e18;color:#4ade80;font-size:11px;cursor:pointer;font-weight:600">✅</button><button onclick="approveManualKpi('${r.id}','rejected')" style="padding:3px 8px;border-radius:5px;border:1px solid #f8717160;background:#ef444418;color:#f87171;font-size:11px;cursor:pointer">❌</button></div>`;
+      h+=`<div style="display:grid;grid-template-columns:${cols};gap:0 8px;align-items:center;padding:7px 10px;border-radius:7px;border-bottom:1px solid var(--b);font-size:12px">
+        <div><div style="font-weight:600">${r.full_name||r.username}</div><div style="font-size:10px;color:var(--m)">${r.username}${r.notes?` · ${r.notes.slice(0,30)}...`:''}</div></div>
+        <div style="text-align:center;font-weight:600">${r.sang_kien||0}</div>
+        <div style="text-align:center">${r.chi_phi||0} tr</div>
+        <div style="text-align:center">${r.doanh_thu||0} tr</div>
+        <div style="text-align:center;font-weight:600">${r.tai_lieu||0}</div>
+        <div style="text-align:center">${statusBadge}</div>
+      </div>`;
+    });
+    el.innerHTML=h;
+  }catch(e){el.innerHTML='<div style="color:var(--red);font-size:12px;padding:8px">Lỗi: '+e.message+'</div>';}
+}
+async function submitManualKpi(){
+  if(!window._myUsername){toast('Chưa đăng nhập!',true);return;}
+  const pk=manualKpiPeriodKey();
+  const body={
+    username:window._myUsername,
+    full_name:authState?.profile?.full_name||window._myUsername,
+    period_key:pk,
+    sang_kien:+document.getElementById('mk_sang_kien').value||0,
+    chi_phi:+document.getElementById('mk_chi_phi').value||0,
+    doanh_thu:+document.getElementById('mk_doanh_thu').value||0,
+    tai_lieu:+document.getElementById('mk_tai_lieu').value||0,
+    notes:document.getElementById('mk_notes').value.trim()||null,
+  };
+  try{
+    await api('/api/rd/manual-kpi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    toast('✅ Đã nộp chỉ tiêu tháng '+pk+' — chờ manager duyệt');
+    const btn=document.getElementById('manualKpiSubmitBtn');
+    if(btn) btn.innerHTML='⏳ Chờ duyệt';
+    loadManualKpi();
+  }catch(e){toast('Lỗi nộp: '+e.message,true);}
+}
+async function approveManualKpi(id,status){
+  try{
+    await api('/api/rd/manual-kpi/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({status,approved_by:window._myUsername||'admin'})});
+    toast(status==='approved'?'✅ Đã duyệt':'❌ Đã bác');
+    loadManualKpi();
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+
 async function saveSnapshotManual(){
   if(!projData?.results){toast('Tải dữ liệu trước!',true);return;}
   const type=document.getElementById('snapType').value;
@@ -2395,6 +2532,7 @@ async function initApp(){
   if(authed){
     showApp();
     renderKqMetricRows(); // render metric rows sớm, trước khi tab config mở
+    initManualKpiForm();
     loadGradeConfigUI();
     const isAdmin=authState?.profile?.role==='admin';
     window._isAdmin=isAdmin;
@@ -2422,7 +2560,7 @@ function sw(id){
   if(id==='history')loadHistory();
   if(id==='attendance'){loadAttendanceToday();}
   if(id==='bonus'){bfPeriodChange();loadBfHistory();}
-  if(id==='config'){renderConfig();renderNameMapConfig();if(authState?.profile?.role==='admin')loadUserList();}
+  if(id==='config'){renderConfig();renderNameMapConfig();loadManualKpi();if(authState?.profile?.role==='admin')loadUserList();}
 }
 function toast(msg,err){
   const el=document.getElementById('toast');
@@ -2955,177 +3093,4 @@ function bfPeriodChange(){
     for(let i=0;i<3;i++)opts.push({v:`${now.getFullYear()-i}`,l:`Năm ${now.getFullYear()-i}`});
   }
   sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('');
-  loadBfHistory();
-}
-function getWeekNum(d){const s=new Date(d.getFullYear(),0,1);return Math.ceil(((d-s)/86400000+s.getDay()+1)/7);}
-async function calcBonus(){
-  const total=+(document.getElementById('bfTotal').value)||0;
-  const adminPct=+(document.getElementById('bfAdminPct').value)||0;
-  if(!total){toast('Nhập tổng quỹ thưởng!',true);return;}
-  // Always refresh user profiles to get latest level/salary settings
-  await bfLoadUsers();
-  const periodKey=document.getElementById('bfPeriodKey').value;
-  const periodType=document.getElementById('bfPeriodType').value;
-  // Load KPI for period — try snapshot DB first, fall back to current projData
-  let kpiMap={};
-  try{
-    const snaps=await api('/api/rd/snapshots?period_type='+periodType+'&year='+(periodKey.split('-')[0]||new Date().getFullYear()));
-    const matchSnap=(snaps||[]).find(s=>s.period_key===periodKey);
-    if(matchSnap?.results){
-      matchSnap.results.forEach(r=>{kpiMap[r.username]={score:r.score||0,full_name:r.full_name||r.username};});
-    }
-  }catch(e){}
-  // Fallback to current loaded data
-  if(!Object.keys(kpiMap).length&&projData?.results){
-    projData.results.forEach(r=>{const sc=(r.kq_score!=null)?{score:r.kq_score}:calcScore(r);kpiMap[r.username]={score:sc.score,full_name:r.full_name||r.username};});
-  }
-  const levelMul={junior:1.0,mid:1.5,senior:2.0,lead:2.5};
-  const memberPool=total*(1-adminPct/100);
-  const adminPool=total*adminPct/100;
-  // Build member list: primary from projData (real members in Baseworks),
-  // enriched with profile data (level/salary) from rd_user_profiles (_bfUsers)
-  let members=[];
-  const baseList=projData?.results?.length?projData.results:_bfUsers.filter(u=>u.username);
-  baseList.forEach(r=>{
-    // Match profile: by username first, then by email prefix (rd01@nsca.vn → 'rd01')
-    const prof=_bfUsers.find(u=>u.username&&u.username===r.username)
-      ||_bfUsers.find(u=>u.email&&u.email.split('@')[0]===r.username)
-      ||{};
-    members.push({username:r.username,full_name:r.full_name||prof.full_name||r.username,
-      email:prof.email||r.email||'',
-      level:prof.level||'mid',
-      base_salary:+(prof.base_salary)||0,
-      kpi_target:+(prof.kpi_target)||70});
-  });
-  if(!members.length){toast('Chưa có thành viên. Nhấn 🔄 Làm mới trước!',true);return;}
-  // compute weights
-  const weights=members.map(u=>{
-    const score=kpiMap[u.username]?.score||0;
-    const mul=levelMul[u.level||'mid']||1.5;
-    const sal=u.base_salary||0;
-    return{...u,score,mul,sal,weight:score*mul*(sal||1)};
-  });
-  const totalWeight=weights.reduce((s,w)=>s+w.weight,0)||1;
-  const dist=weights.map(w=>({
-    username:w.username,
-    full_name:w.full_name||kpiMap[w.username]?.full_name||w.username,
-    email:w.email,level:w.level||'mid',
-    base_salary:w.sal,kpi_score:w.score,
-    grade:gradeTag(w.score).replace(/<[^>]+>/g,''),
-    multiplier:w.mul,weight:w.weight,
-    share:totalWeight>0?(w.weight/totalWeight*memberPool):0
-  })).sort((a,b)=>b.share-a.share);
-  // Store for save
-  window._bfResult={periodType,periodKey,total,adminPct,adminPool,memberPool,dist,
-    gradeConfig:getGradeCfg()};
-  // Render
-  const gcfg=getGradeCfg();
-  let h='<table style="width:100%;font-size:12px;border-collapse:collapse">'
-    +'<thead><tr style="color:var(--m)"><th style="text-align:left;padding:4px 6px">Thành viên</th><th>Cấp bậc</th><th>KPI</th><th>Xếp loại</th><th>Lương CB</th><th>Hệ số</th><th style="text-align:right">Thưởng (VNĐ)</th></tr></thead><tbody>';
-  dist.forEach(d=>{
-    h+=`<tr style="border-top:1px solid var(--bdr)">
-      <td style="padding:5px 6px"><b>${d.full_name}</b><div style="font-size:10px;color:var(--m)">${d.username}</div></td>
-      <td style="text-align:center">${d.level}</td>
-      <td style="text-align:center;font-weight:700">${d.kpi_score.toFixed(1)}</td>
-      <td style="text-align:center">${gradeTag(d.kpi_score)}</td>
-      <td style="text-align:right">${d.base_salary.toLocaleString('vi-VN')}</td>
-      <td style="text-align:center">${d.multiplier}×</td>
-      <td style="text-align:right;font-weight:700;color:var(--green)">${Math.round(d.share).toLocaleString('vi-VN')}</td>
-    </tr>`;
-  });
-  if(adminPool>0){
-    h+=`<tr style="border-top:2px solid var(--bdr);background:var(--card2)">
-      <td colspan="6" style="padding:5px 6px;color:var(--m)">Phần admin/quản lý (${adminPct}%)</td>
-      <td style="text-align:right;font-weight:700;color:var(--blue)">${Math.round(adminPool).toLocaleString('vi-VN')}</td>
-    </tr>`;
-  }
-  h+=`<tr style="border-top:2px solid var(--bdr);font-weight:700">
-    <td colspan="6" style="padding:5px 6px">Tổng cộng</td>
-    <td style="text-align:right;color:var(--t)">${Math.round(total).toLocaleString('vi-VN')}</td>
-  </tr>`;
-  h+='</tbody></table>';
-  document.getElementById('bfResultTable').innerHTML=h;
-  document.getElementById('bfResultCard').style.display='';
-  toast('Đã tính xong!');
-}
-async function saveBonusFund(){
-  if(!window._bfResult){toast('Tính thưởng trước!',true);return;}
-  const r=window._bfResult;
-  const notes=document.getElementById('bfNotes').value;
-  try{
-    await api('/api/rd/bonus-fund',{method:'POST',body:JSON.stringify({
-      period_type:r.periodType,period_key:r.periodKey,
-      period_label:document.getElementById('bfPeriodKey').options[document.getElementById('bfPeriodKey').selectedIndex]?.text||r.periodKey,
-      total_amount:r.total,admin_percent:r.adminPct,admin_amount:r.adminPool,
-      member_amount:r.memberPool,distribution:r.dist,grade_config:r.gradeConfig,notes
-    })});
-    toast('Đã lưu quỹ thưởng!');
-    loadBfHistory();
-  }catch(e){toast('Lỗi: '+e.message,true);}
-}
-async function loadBfHistory(){
-  const el=document.getElementById('bfHistList');
-  if(!el)return;
-  try{
-    const data=await api('/api/rd/bonus-funds');
-    const list=Array.isArray(data)?data:(data.funds||[]);
-    if(!list.length){el.innerHTML='<div style="color:var(--m);font-size:12px">Chưa có lịch sử.</div>';return;}
-    el.innerHTML=list.map(f=>`
-      <div class="bf-hist-item" onclick="loadBfDetail('${f.period_key}')">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div><b>${f.period_label||f.period_key}</b> <span style="font-size:11px;color:var(--m)">(${f.period_type})</span></div>
-          <div style="font-weight:700;color:var(--green)">${(+f.total_amount||0).toLocaleString('vi-VN')} ₫</div>
-        </div>
-        <div style="font-size:11px;color:var(--m);margin-top:2px">${f.notes||''} · ${new Date(f.saved_at).toLocaleDateString('vi-VN')}</div>
-      </div>`).join('');
-  }catch(e){el.innerHTML='<div style="color:var(--red)">❌ '+e.message+'</div>';}
-}
-async function loadBfDetail(periodKey){
-  try{
-    const f=await api('/api/rd/bonus-fund/'+encodeURIComponent(periodKey));
-    const dist=f.distribution||[];
-    document.getElementById('bfResultTable').innerHTML=`<div style="font-size:13px;font-weight:600;margin-bottom:8px">${f.period_label||periodKey}</div>`
-      +'<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:var(--m)"><th style="text-align:left;padding:4px 6px">Thành viên</th><th>KPI</th><th>Xếp loại</th><th style="text-align:right">Thưởng</th></tr></thead><tbody>'
-      +dist.map(d=>`<tr style="border-top:1px solid var(--bdr)"><td style="padding:5px 6px"><b>${d.full_name}</b></td><td style="text-align:center">${(+d.kpi_score||0).toFixed(1)}</td><td style="text-align:center"><span class="grade grade-${d.grade}">${d.grade}</span></td><td style="text-align:right;font-weight:700;color:var(--green)">${Math.round(+d.share||0).toLocaleString('vi-VN')} ₫</td></tr>`).join('')
-      +'</tbody></table>';
-    document.getElementById('bfResultCard').style.display='';
-    sw('bonus');
-  }catch(e){toast('Lỗi: '+e.message,true);}
-}
-function toggleTheme(){
-  const isLight=document.documentElement.classList.toggle('light');
-  localStorage.setItem('rd_theme',isLight?'light':'dark');
-  document.getElementById('themeBtn').textContent=isLight?'🌙':'☀️';
-}
-function initTheme(){
-  const saved=localStorage.getItem('rd_theme');
-  if(saved==='light'){document.documentElement.classList.add('light');document.getElementById('themeBtn').textContent='🌙';}
-}
-async function exportBonusExcel(){
-  if(!window._bfResult){toast('T\u00ednh th\u01b0\u1edfng tr\u01b0\u1edbc!',true);return;}
-  const r=window._bfResult;
-  const NL='\n';
-  let csv='Th\u00e0nh vi\u00ean,Username,C\u1ea5p b\u1eadc,KPI,X\u1ebfp lo\u1ea1i,L\u01b0\u01a1ng CB,Th\u01b0\u1edfng (VND)'+NL;
-  r.dist.forEach(d=>{csv+='"'+d.full_name+'","'+d.username+'","'+d.level+'",'+d.kpi_score.toFixed(1)+',"'+d.grade+'",'+d.base_salary+','+Math.round(d.share)+NL;});
-  csv+=',,,,,,'+Math.round(r.total)+NL;
-  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-  a.download='bonus_'+r.periodKey+'.csv';a.click();
-}
-</script>
-
-<div id="sheetModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
-  <div style="background:var(--card);border-radius:14px;padding:24px 28px;max-width:480px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.4)">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div><div style="font-size:15px;font-weight:700;color:var(--t)">📊 Đồng bộ Google Sheet</div>
-        <div style="font-size:11px;color:var(--m);margin-top:2px">Đẩy KPI + đầu việc tuần này lên Google Sheet</div></div>
-      <button onclick="closeSheetModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--m);line-height:1">×</button>
-    </div>
-    <div style="margin-bottom:12px">
-      <label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">Web App URL (từ Google Apps Script)</label>
-      <input class="inp" id="sheetModalUrl" style="width:100%;font-size:12px;box-sizing:border-box" placeholder="https://script.google.com/macros/s/AKfyc.../exec">
-      <div style="font-size:10px;color:var(--m);margin-top:4px">Chưa có URL? Xem hướng dẫn cài Apps Script trong folder <b>nsca-kpi-sheets</b></div>
-    </div>
-    <div id="sheetModalStatus" style="font-size:11px;min-height:18px;margin-bottom:12px;color:var(--m)"></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-  
+  loadBfHisto
