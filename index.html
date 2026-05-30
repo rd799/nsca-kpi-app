@@ -1,0 +1,3135 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KPI Phòng R&D 2026</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js">
+// ── KPI Quota config 3-tier (Kém / Tiêu chuẩn / Vượt) ───────────────
+const KQ_METRICS=[
+  {id:'task',       icon:'📦', name:'Sản lượng task',      unit:'task/tuần',           dir:'high', def:{quota:5,  below:60, above:120, weight:30}},
+  {id:'overdue',    icon:'⏰', name:'Quá hạn cho phép',    unit:'lần quá hạn/tuần',    dir:'low',  def:{quota:1,  below:50, above:110, weight:25}},
+  {id:'hard',       icon:'⚙️', name:'Task khó',            unit:'task khó/tuần',        dir:'high', def:{quota:1,  below:70, above:115, weight:15}},
+  {id:'quality',    icon:'✅', name:'Chất lượng review',   unit:'task không đạt/tháng', dir:'low',  def:{quota:1,  below:60, above:110, weight:10}},
+  {id:'attendance', icon:'📅', name:'Điểm danh',           unit:'% ngày đúng giờ',      dir:'high', def:{quota:90, below:60, above:110, weight:15}},
+  {id:'unexcused',  icon:'🚫', name:'Vắng không phép',     unit:'lần/tháng',            dir:'low',  def:{quota:0,  below:50, above:110, weight:5}},
+  {id:'delegation', icon:'🤝', name:'Giao việc (leader)',  unit:'task giao/tuần',       dir:'high', def:{quota:3,  below:70, above:110, weight:0}},
+];
+
+function renderKqMetricRows(){
+  const container=document.getElementById('kqMetricRows');
+  if(!container)return;
+  const COLS='1fr 100px 76px 76px 72px';
+  const cp='8px 6px';
+  let h=`<div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+    <span style="background:#ef444418;border:1px solid #ef444450;color:#f87171;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">🔴 Kém — dưới định mức</span>
+    <span style="background:var(--card2);border:1px solid var(--b);color:var(--fg);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">⚪ Đúng định mức = 100đ</span>
+    <span style="background:#22c55e18;border:1px solid #22c55e50;color:#4ade80;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600">🟢 Vượt — trên định mức</span>
+    <span style="flex:1"></span>
+    <span id="kqWeightBadge" style="font-size:12px;font-weight:700;padding:3px 12px;border-radius:20px;background:var(--card2);border:1px solid var(--b)"></span>
+  </div>`;
+  h+=`<div style="display:grid;grid-template-columns:${COLS};gap:0 4px;padding:7px 12px;border-radius:8px;background:var(--card2);border:1px solid var(--b);margin-bottom:3px">
+    <div style="font-size:10px;font-weight:700;color:var(--m);text-transform:uppercase;letter-spacing:.5px">Tiêu chí</div>
+    <div style="text-align:center;font-size:10px;font-weight:700;color:#60a5fa;text-transform:uppercase;letter-spacing:.5px">Định mức</div>
+    <div style="text-align:center;font-size:10px;font-weight:700;color:#f87171;text-transform:uppercase;letter-spacing:.5px">🔴 Kém</div>
+    <div style="text-align:center;font-size:10px;font-weight:700;color:#4ade80;text-transform:uppercase;letter-spacing:.5px">🟢 Vượt</div>
+    <div style="text-align:center;font-size:10px;font-weight:700;color:var(--m);text-transform:uppercase;letter-spacing:.5px">Trọng số</div>
+  </div>`;
+  KQ_METRICS.forEach((m,i)=>{
+    const d=m.def;
+    const rowBg=i%2===0?'var(--card2)':'transparent';
+    const dirBadge=m.dir==='low'
+      ?'<span style="font-size:9px;color:#60a5fa;background:#3b82f618;border-radius:3px;padding:1px 4px;font-weight:600">↓ thấp tốt</span>'
+      :'<span style="font-size:9px;color:#a3e635;background:#84cc1618;border-radius:3px;padding:1px 4px;font-weight:600">↑ cao tốt</span>';
+    const inp=(id,val,extra='',bc='var(--b)')=>
+      `<input type="number" id="${id}" value="${val}" ${extra}
+        style="width:100%;box-sizing:border-box;padding:6px 3px;border-radius:6px;border:1px solid ${bc};background:var(--bg);color:var(--fg);font-size:13px;font-weight:700;text-align:center;outline:none">`;
+    h+=`<div style="display:grid;grid-template-columns:${COLS};gap:0 4px;align-items:center;padding:7px 12px;border-radius:7px;background:${rowBg};margin-bottom:2px">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0">
+        <span style="font-size:17px;flex-shrink:0">${m.icon}</span>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--fg)">${m.name} ${dirBadge}</div>
+          <div style="font-size:10px;color:var(--m)">${m.unit}</div>
+        </div>
+      </div>
+      <div style="background:#3b82f610;border-radius:6px;padding:4px">
+        ${inp(`kq_${m.id}_quota`,d.quota,'step="any"','#3b82f660')}
+        <div style="text-align:center;font-size:9px;color:#60a5fa;font-weight:600;margin-top:1px">=100đ</div>
+      </div>
+      <div style="background:#ef444410;border-radius:6px;padding:4px">
+        ${inp(`kq_${m.id}_below`,d.below,'min="0" max="99"','#ef444450')}
+        <div style="text-align:center;font-size:9px;color:#f87171;font-weight:600;margin-top:1px">điểm kém</div>
+      </div>
+      <div style="background:#22c55e10;border-radius:6px;padding:4px">
+        ${inp(`kq_${m.id}_above`,d.above,'min="101" max="150"','#22c55e50')}
+        <div style="text-align:center;font-size:9px;color:#4ade80;font-weight:600;margin-top:1px">điểm vượt</div>
+      </div>
+      <div style="padding:4px">
+        ${inp(`kq_${m.id}_weight`,d.weight,'min="0" max="100" oninput="kqUpdateTotal()" class="kq-w"')}
+        <div style="text-align:center;font-size:9px;color:var(--m);font-weight:600;margin-top:1px">%</div>
+      </div>
+    </div>`;
+  });
+  container.innerHTML=h;
+  kqUpdateTotal();
+}
+
+async function loadKpiQuotaConfig(){
+  try{
+    const c=await api('/api/rd/kpi-quota-config');
+    const q=c.quotas||{};
+    KQ_METRICS.forEach(m=>{
+      ['quota','below','above','weight'].forEach(f=>{
+        const el=document.getElementById(`kq_${m.id}_${f}`);
+        if(el&&q[m.id]?.[f]!==undefined)el.value=q[m.id][f];
+      });
+    });
+    kqUpdateTotal();
+    const badge=document.getElementById('kqWeightBadge');
+    if(badge){badge.innerHTML=c.quotas
+      ?'<span style="color:var(--green)">✅ Đã lưu — đang dùng khi sync</span>'
+      :'<span style="color:var(--m)">Chưa lưu</span>';}
+  }catch(e){/* ignore */}
+}
+
+async function saveKpiQuotaConfig(){
+  const quotas={};
+  KQ_METRICS.forEach(m=>{
+    quotas[m.id]={};
+    ['quota','below','above','weight'].forEach(f=>{
+      const el=document.getElementById(`kq_${m.id}_${f}`);
+      if(el)quotas[m.id][f]=parseFloat(el.value)||0;
+    });
+  });
+  const totalW=KQ_METRICS.reduce((s,m)=>s+(quotas[m.id]?.weight||0),0);
+  if(Math.abs(totalW-100)>0.5){toast('Tổng trọng số phải = 100% (hiện: '+totalW+'%)',true);return;}
+  try{
+    await api('/api/rd/kpi-quota-config',{method:'PUT',body:JSON.stringify({enabled:true,quotas})});
+    toast('✅ Đã lưu định mức KPI!');
+    loadKpiQuotaConfig();
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+
+function kqUpdateTotal(){
+  const total=KQ_METRICS.reduce((s,m)=>{
+    const el=document.getElementById(`kq_${m.id}_weight`);
+    return s+(parseFloat(el?.value)||0);
+  },0);
+  const badge=document.getElementById('kqWeightBadge');
+  if(badge){
+    const ok=Math.abs(total-100)<0.5;
+    badge.innerHTML=`<span style="color:${ok?'var(--green)':'var(--red)'}">Tổng trọng số: ${total}%${ok?' ✓':' ✗'}</span>`;
+  }
+}
+
+</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+/* ═══════════════════════ DESIGN TOKENS ═══════════════════════ */
+:root{
+  --bg:#0a0a0b;--card:#111113;--card2:#0a0a0b;
+  --b:#1f1f23;--b2:#2e2e34;
+  --t:#f4f4f5;--t2:#a1a1aa;--m:#71717a;
+  --blue:#60a5fa;--green:#4ade80;--red:#f87171;
+  --yellow:#fbbf24;--orange:#fb923c;--purple:#c084fc;
+  --acc:#3b82f6;--acc2:#2563eb;--bdr:#1f1f23;
+  --r:8px;--r2:12px
+}
+:root.light{
+  --bg:#f4f4f5;--card:#ffffff;--card2:#f4f4f5;
+  --b:#e4e4e7;--b2:#d4d4d8;
+  --t:#09090b;--t2:#52525b;--m:#71717a;
+  --blue:#2563eb;--green:#16a34a;--red:#dc2626;
+  --yellow:#d97706;--orange:#ea580c;--purple:#7c3aed;
+  --acc:#2563eb;--acc2:#1d4ed8;--bdr:#e4e4e7
+}
+/* ═══════════════════════ BASE ═══════════════════════ */
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--t);font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.5;min-height:100vh;-webkit-font-smoothing:antialiased}
+/* ═══════════════════════ HEADER ═══════════════════════ */
+.hdr{background:var(--card);padding:0 24px;height:54px;border-bottom:1px solid var(--b);display:flex;align-items:center;justify-content:space-between;gap:16px;position:sticky;top:0;z-index:100}
+.hdr h1{font-size:14px;font-weight:700;color:var(--t);letter-spacing:-.02em;display:flex;align-items:center;gap:6px}
+/* ═══════════════════════ TABS ═══════════════════════ */
+.tabs{display:flex;gap:0;padding:0 24px;border-bottom:1px solid var(--b);background:var(--card);overflow-x:auto;-ms-overflow-style:none;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{padding:15px 16px 14px;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;font-size:13px;font-weight:500;color:var(--m);white-space:nowrap;transition:color .15s,border-color .15s;user-select:none}
+.tab.active{color:var(--t);border-bottom-color:var(--acc)}
+.tab:hover:not(.active){color:var(--t2)}
+/* ═══════════════════════ CONTENT ═══════════════════════ */
+.content{padding:20px 24px;max-width:1200px;margin:0 auto}
+.pane{display:none}.pane.active{display:block}
+/* ═══════════════════════ CARD ═══════════════════════ */
+.card{background:var(--card);border:1px solid var(--b);border-radius:var(--r2);padding:18px 20px;margin-bottom:16px}
+.ctitle{font-size:14px;font-weight:600;margin-bottom:4px;color:var(--t);letter-spacing:-.01em}
+.csub{font-size:12px;color:var(--m);margin-bottom:14px;line-height:1.5}
+/* ═══════════════════════ STATS ═══════════════════════ */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:18px}
+.stat{background:var(--card);border:1px solid var(--b);border-radius:var(--r2);padding:16px 18px;text-align:center}
+.sv{font-size:26px;font-weight:700;line-height:1.1;letter-spacing:-.03em}
+.sl{font-size:11px;color:var(--m);margin-top:5px;font-weight:500;text-transform:uppercase;letter-spacing:.05em}
+/* ═══════════════════════ TABLE ═══════════════════════ */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{padding:10px 14px;text-align:left;color:var(--m);font-weight:600;background:var(--card2);border-bottom:1px solid var(--b);white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+td{padding:12px 14px;border-bottom:1px solid var(--b);vertical-align:middle;font-size:13px}
+tr:last-child td{border-bottom:none}
+.krow{cursor:pointer;transition:background .12s}
+.krow:hover td{background:rgba(59,130,246,.05)}
+/* ═══════════════════════ SCORE BAR ═══════════════════════ */
+.sbar-wrap{display:flex;align-items:center;gap:10px;min-width:160px}
+.sbar{flex:1;height:6px;background:var(--b);border-radius:3px;overflow:hidden}
+.sbar-f{height:100%;border-radius:3px;transition:width .5s}
+.sval{font-size:16px;font-weight:700;min-width:44px;text-align:right}
+.rk{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.r1{background:#fbbf24;color:#000}.r2{background:#94a3b8;color:#000}.r3{background:#b45309;color:#fff}.rn{background:var(--card2);color:var(--m);border:1px solid var(--b)}
+/* ═══════════════════════ CONFIG ═══════════════════════ */
+.mrow2{display:flex;align-items:flex-start;gap:12px;padding:14px 0;border-bottom:1px solid var(--b)}
+.mrow2:last-child{border-bottom:none}
+.mdot{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.minfo{flex:1;min-width:0}
+.mname{font-size:14px;font-weight:500;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.mdesc{font-size:12px;color:var(--m);margin-top:3px;line-height:1.4}
+.mtrack{height:3px;background:var(--b);border-radius:2px;margin-top:7px}
+.mfill{height:100%;border-radius:2px;transition:width .3s}
+.wtotal{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-radius:var(--r);margin-top:12px;font-size:13px;font-weight:600;flex-wrap:wrap;gap:8px}
+.wok{background:rgba(74,222,128,.08);color:var(--green);border:1px solid rgba(74,222,128,.2)}
+.werr{background:rgba(248,113,113,.08);color:var(--red);border:1px solid rgba(248,113,113,.2)}
+.dcfg{background:var(--card2);border:1px solid var(--b);border-radius:var(--r);padding:14px;margin-top:8px;display:none}
+.dcfg.open{display:block}
+.dcfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media(max-width:500px){.dcfg-grid{grid-template-columns:1fr}}
+.dcfg-row{display:flex;align-items:center;gap:8px;padding:6px 0}
+.dcfg-label{font-size:12px;color:var(--m);flex:1}
+.dcfg-inp{width:66px;padding:5px 8px;border-radius:6px;border:1px solid var(--b);background:var(--card);color:var(--t);font-size:12px;text-align:center;font-family:inherit}
+.dcfg-inp:focus{outline:none;border-color:var(--acc)}
+.dcfg-unit{font-size:12px;color:var(--m);white-space:nowrap}
+.example-box{background:var(--card2);border:1px solid var(--b);border-radius:var(--r);padding:10px 14px;margin-top:10px;font-size:12px;color:var(--m);line-height:2}
+.example-box b{color:var(--t)}
+.dcfg-title{font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+/* ═══════════════════════ BUTTONS ═══════════════════════ */
+.btn{padding:7px 14px;border-radius:var(--r);border:none;cursor:pointer;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:5px;transition:all .15s;font-family:inherit;line-height:1.4}
+.bp{background:var(--acc);color:#fff}.bp:hover{background:var(--acc2)}
+.bs{background:var(--card);color:var(--t);border:1px solid var(--b)}.bs:hover{background:var(--b2)}
+.bg2{background:rgba(74,222,128,.1);color:var(--green);border:1px solid rgba(74,222,128,.25)}.bg2:hover{background:rgba(74,222,128,.18)}
+.btn-cfg{padding:5px 10px;border-radius:var(--r);border:1px solid var(--b);background:transparent;color:var(--m);cursor:pointer;font-size:12px;transition:all .15s;white-space:nowrap;font-family:inherit}
+.btn-cfg:hover,.btn-cfg.open{background:rgba(59,130,246,.1);color:var(--blue);border-color:rgba(59,130,246,.3)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+/* ═══════════════════════ INPUTS ═══════════════════════ */
+.inp{padding:7px 10px;border-radius:var(--r);border:1px solid var(--b);background:var(--card2);color:var(--t);font-size:13px;font-family:inherit;transition:border-color .15s}
+.inp:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+select.inp{cursor:pointer}
+/* ═══════════════════════ BADGES ═══════════════════════ */
+.bg{display:inline-flex;align-items:center;background:rgba(74,222,128,.12);color:var(--green);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
+.br{display:inline-flex;align-items:center;background:rgba(248,113,113,.12);color:var(--red);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
+.bb{display:inline-flex;align-items:center;background:rgba(96,165,250,.12);color:var(--blue);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
+.by{display:inline-flex;align-items:center;background:rgba(251,191,36,.12);color:var(--yellow);padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500}
+.tag-a{font-size:11px;padding:2px 8px;border-radius:20px;background:rgba(96,165,250,.12);color:var(--blue);white-space:nowrap}
+/* ═══════════════════════ PERIOD BTNS ═══════════════════════ */
+.period-btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.pb{padding:5px 13px;border-radius:var(--r);border:1px solid var(--b);background:transparent;color:var(--m);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;font-family:inherit}
+.pb.active{background:rgba(59,130,246,.12);color:var(--blue);border-color:rgba(59,130,246,.4)}
+.pb:hover:not(.active){color:var(--t2);border-color:var(--b2)}
+/* ═══════════════════════ REPORT ═══════════════════════ */
+.rpt-member{margin-bottom:16px;border-radius:var(--r2);overflow:hidden;border:1px solid var(--b)}
+.kpi-pf{font-size:12px;padding:4px 12px;background:transparent;border:1px solid var(--b);color:var(--m);border-radius:20px;cursor:pointer;transition:all .15s;font-family:inherit}
+.kpi-pf.active{background:var(--acc);color:#fff;border-color:var(--acc)}
+.rpt-hd{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--card2);border-bottom:1px solid var(--b);flex-wrap:wrap}
+.rpt-body{padding:12px 16px;background:var(--card)}
+.rpt-section{margin-bottom:12px}
+.rpt-section-title{font-size:11px;font-weight:600;color:var(--m);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+.rpt-task{display:flex;align-items:flex-start;gap:8px;padding:7px 0;font-size:13px;line-height:1.5;border-bottom:1px solid var(--b)}
+.rpt-task:last-child{border-bottom:none}
+/* ═══════════════════════ HISTORY ═══════════════════════ */
+.hist-table td{text-align:center}.hist-table th:first-child{text-align:left}
+.hist-table td:first-child{text-align:left;font-weight:500}
+.hs{padding:3px 8px;border-radius:4px;font-size:12px;font-weight:600}
+.hs-g{background:rgba(74,222,128,.15);color:var(--green)}
+.hs-b{background:rgba(96,165,250,.15);color:var(--blue)}
+.hs-y{background:rgba(251,191,36,.15);color:var(--yellow)}
+.hs-r{background:rgba(248,113,113,.15);color:var(--red)}
+.hs-n{color:var(--m);font-weight:400}
+.chart-wrap{height:200px;position:relative;margin-top:12px}
+/* ═══════════════════════ MODAL ═══════════════════════ */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:2000;padding:16px}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--card);border:1px solid var(--b);border-radius:16px;width:100%;max-width:580px;max-height:88vh;overflow-y:auto}
+.modal-hdr{display:flex;align-items:center;gap:12px;padding:18px 20px;border-bottom:1px solid var(--b)}
+.modal-close{margin-left:auto;background:none;border:none;color:var(--m);font-size:20px;cursor:pointer;padding:3px 7px;border-radius:6px;transition:all .15s;line-height:1}
+.modal-close:hover{background:var(--b);color:var(--t)}
+.modal-score-sec{padding:18px 20px;border-bottom:1px solid var(--b);text-align:center}
+.modal-big-score{font-size:48px;font-weight:800;line-height:1;letter-spacing:-.04em}
+.modal-metrics{padding:16px 20px;border-bottom:1px solid var(--b)}
+.mm-row{display:flex;align-items:center;gap:12px;padding:7px 0}
+.mm-label{width:190px;font-size:13px;color:var(--m);flex-shrink:0;line-height:1.4}
+.mm-bar{flex:1;height:6px;background:var(--b);border-radius:3px;overflow:hidden}
+.mm-fill{height:100%;border-radius:3px}
+.mm-val{width:44px;text-align:right;font-size:14px;font-weight:700;flex-shrink:0}
+.modal-tasks{padding:16px 20px}
+.modal-task-title{font-size:11px;font-weight:600;color:var(--m);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
+.mt-item{display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid var(--b)}
+.mt-item:last-child{border-bottom:none}
+.mt-score{min-width:38px;text-align:right;font-size:13px;font-weight:700;padding-top:2px}
+/* ═══════════════════════ MISC ═══════════════════════ */
+.info-box{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2);border-radius:var(--r);padding:10px 14px;font-size:12px;color:#93c5fd;margin-bottom:12px;line-height:1.7}
+.info-box b{color:var(--blue)}
+.autosave-dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:4px;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 20px;border-radius:8px;font-size:13px;font-weight:500;z-index:9999;display:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.4)}
+.tok{background:#22c55e;color:#fff}.terr{background:#ef4444;color:#fff}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(max-width:600px){.content,.hdr,.tabs{padding-left:14px;padding-right:14px}.tab{padding:12px 10px;font-size:12px}}
+/* ═══════════════════════ LOGIN ═══════════════════════ */
+.lo{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9000;flex-direction:column}
+.lo.hidden{display:none}
+.lo-box{background:var(--card);border:1px solid var(--b);border-radius:16px;padding:36px 32px;width:100%;max-width:400px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.lo-title{font-size:22px;font-weight:700;color:var(--t);margin-bottom:4px;text-align:center;letter-spacing:-.03em}
+.lo-sub{font-size:13px;color:var(--m);text-align:center;margin-bottom:28px}
+.lo-field{margin-bottom:16px}
+.lo-label{font-size:12px;color:var(--m);margin-bottom:6px;display:block;font-weight:500}
+.lo-inp{width:100%;padding:10px 14px;border-radius:var(--r);border:1px solid var(--b);background:var(--card2);color:var(--t);font-size:14px;font-family:inherit;transition:border-color .15s}
+.lo-inp:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px rgba(59,130,246,.15)}
+.lo-err{color:var(--red);font-size:12px;margin-top:8px;text-align:center;min-height:18px}
+.lo-tabs{display:flex;gap:4px;margin-bottom:24px;background:var(--card2);border-radius:var(--r);padding:3px;border:1px solid var(--b)}
+.lo-tab{flex:1;padding:7px;text-align:center;cursor:pointer;font-size:13px;font-weight:500;color:var(--m);border-radius:6px;transition:all .15s;font-family:inherit}
+.lo-tab.active{background:var(--card);color:var(--t);box-shadow:0 1px 4px rgba(0,0,0,.3)}
+/* ═══════════════════════ ATTENDANCE ═══════════════════════ */
+.att-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px;margin-bottom:16px}
+.att-card{background:var(--card2);border:1px solid var(--b);border-radius:var(--r2);padding:14px;text-align:center}
+.att-name{font-size:13px;font-weight:600;margin-bottom:5px}
+.att-time{font-size:12px;color:var(--m)}
+.att-status{display:inline-flex;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;margin-top:6px}
+.att-present{background:rgba(74,222,128,.12);color:var(--green)}
+.att-late{background:rgba(251,191,36,.12);color:var(--yellow)}
+.att-absent{background:rgba(248,113,113,.12);color:var(--red)}
+.att-out{background:rgba(96,165,250,.12);color:var(--blue)}
+.att-row{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--b);font-size:13px}
+.att-row:last-child{border-bottom:none}
+/* ═══════════════════════ PRINT ═══════════════════════ */
+@media print{
+  .hdr,.tabs,.no-print{display:none!important}
+  body{background:#fff;color:#000}
+  .content{padding:0;max-width:100%}
+  .rpt-hd{background:#f3f4f6;color:#000}
+  .rpt-hd *{color:#000!important}
+  .rpt-body{border-color:#ddd}
+  .card{background:#fff;border-color:#e5e7eb;border-radius:0;margin-bottom:10px}
+  #pane-kpi,#pane-history,#pane-config{display:none!important}
+  #pane-report{display:block!important}
+  .print-title{display:block!important;font-size:16px;font-weight:700;margin-bottom:12px}
+  @page{margin:1.5cm}
+}
+.print-title{display:none}
+/* ═══════════════════════ GRADE BADGES ═══════════════════════ */
+.grade{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;margin-left:6px}
+.grade-A{background:rgba(74,222,128,.15);color:var(--green)}
+.grade-B{background:rgba(96,165,250,.15);color:var(--blue)}
+.grade-C{background:rgba(245,158,11,.15);color:var(--yellow)}
+.grade-D{background:rgba(239,68,68,.15);color:var(--red)}
+/* ═══════════════════════ MEMBER DASH ═══════════════════════ */
+#pane-member-dash{padding:20px}
+.member-dash-card{background:var(--card);border:1px solid var(--b);border-radius:var(--r2);padding:18px;margin-bottom:14px}
+.member-kpi-score{font-size:52px;font-weight:800;line-height:1;letter-spacing:-.04em}
+.member-kpi-grade{font-size:24px;font-weight:700;margin-left:10px}
+/* ═══════════════════════ BONUS FUND ═══════════════════════ */
+.bf-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.bf-label{font-size:13px;color:var(--m);width:130px;flex-shrink:0}
+.bf-hist-item{background:var(--card2);border:1px solid var(--b);border-radius:var(--r);padding:10px 16px;margin-bottom:8px;cursor:pointer;transition:background .15s;font-size:13px}
+.bf-hist-item:hover{background:var(--b)}
+.fgrid{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+.fl{display:flex;flex-direction:column;gap:4px}
+.fl label{font-size:12px;color:var(--m);font-weight:500}
+.fsep{height:1px;background:var(--b);margin:12px 0}
+.sec-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+/* ── Lịch công việc (Board) ── */
+.board-wrap{display:flex;gap:16px;overflow-x:auto;padding-bottom:20px;align-items:flex-start}
+.board-col{background:var(--card);border:1px solid var(--b);border-radius:14px;min-width:280px;width:280px;flex-shrink:0;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.board-col-hd{padding:14px 16px 12px;border-bottom:1px solid var(--b);background:var(--card2)}
+.board-col-name{font-size:15px;font-weight:700;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--t);letter-spacing:.01em}
+.board-col-meta{font-size:11px;color:var(--m);margin-bottom:8px}
+.board-col-body{padding:12px 12px;max-height:72vh;overflow-y:auto}
+.board-task{background:var(--bg);border:1px solid var(--b);border-radius:10px;padding:10px 12px;margin-bottom:10px;cursor:default;transition:box-shadow .15s}
+.board-task:hover{box-shadow:0 2px 10px rgba(0,0,0,.2)}
+.board-task:last-child{margin-bottom:0}
+.board-task-name{font-size:13px;font-weight:500;line-height:1.45;color:var(--t)}
+.board-task-meta{display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap}
+.board-task-dl{font-size:11px;color:var(--m);display:flex;align-items:center;gap:3px}
+.board-task-warn{font-size:11px;font-weight:700;color:var(--red);background:rgba(248,113,113,.12);padding:2px 7px;border-radius:5px}
+.board-sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;margin:14px 0 8px;padding:5px 8px;border-radius:6px}
+.board-sec-title.sec-overdue{color:var(--red);background:rgba(248,113,113,.1)}
+.board-sec-title.sec-active{color:var(--blue);background:rgba(96,165,250,.1)}
+.board-sec-title.sec-nodl{color:var(--m);background:rgba(148,163,184,.1)}
+.board-empty{color:var(--m);font-size:13px;text-align:center;padding:28px 0;line-height:2}
+.board-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.board-badge{display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:600}
+.board-badge-red{background:rgba(248,113,113,.15);color:var(--red);border:1px solid rgba(248,113,113,.3)}
+.board-badge-blue{background:rgba(96,165,250,.15);color:var(--blue);border:1px solid rgba(96,165,250,.3)}
+.board-badge-grey{background:rgba(148,163,184,.15);color:var(--m);border:1px solid rgba(148,163,184,.3)}
+.board-sub{display:flex;align-items:flex-start;gap:6px;padding:5px 0 2px 10px;border-left:2px solid var(--b);margin-left:2px;margin-top:5px}
+.board-sub-name{font-size:11px;color:var(--m);line-height:1.4}
+:root.light .board-col{background:#fff;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(0,0,0,.07)}
+:root.light .board-col-hd{background:#f8fafc}
+:root.light .board-task{background:#f8fafc;border-color:#e2e8f0}
+:root.light .board-task:hover{box-shadow:0 2px 10px rgba(0,0,0,.1)}
+:root.light .board-sec-title.sec-active{background:rgba(37,99,235,.08)}
+:root.light .board-sec-title.sec-overdue{background:rgba(220,38,38,.08)}
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN OVERLAY ────────────────────────────────────────── -->
+<div id="loginOverlay" class="lo">
+  <div class="lo-box">
+    <div class="lo-title">🏗️ KPI Phòng R&D</div>
+    <div class="lo-sub">Đăng nhập để truy cập hệ thống KPI</div>
+    <div class="lo-tabs">
+      <div class="lo-tab active" id="loginTab" onclick="switchLoginTab('login')">Đăng nhập</div>
+      <div class="lo-tab" id="registerTab" onclick="switchLoginTab('register')">Đăng ký</div>
+    </div>
+    <div id="loginForm">
+      <div class="lo-field"><label class="lo-label">Email</label><input class="lo-inp" id="liEmail" type="email" placeholder="email@nsca.vn" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="lo-field"><label class="lo-label">Mật khẩu</label><input class="lo-inp" id="liPass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+      <div class="lo-err" id="liErr"></div>
+      <button class="btn bp" style="width:100%;margin-top:8px;justify-content:center;padding:10px" id="liBtn" onclick="doLogin()">Đăng nhập</button>
+    </div>
+    <div id="registerForm" style="display:none">
+      <div class="lo-field"><label class="lo-label">Email</label><input class="lo-inp" id="regEmail" type="email" placeholder="email@nsca.vn"></div>
+      <div class="lo-field"><label class="lo-label">Mật khẩu</label><input class="lo-inp" id="regPass" type="password" placeholder="Tối thiểu 6 ký tự"></div>
+      <div class="lo-field"><label class="lo-label">Họ và tên</label><input class="lo-inp" id="regName" placeholder="Nguyễn Văn A"></div>
+      <div class="lo-field"><label class="lo-label">Username Base (namph, rd01...)</label><input class="lo-inp" id="regUser" placeholder="namph"></div>
+      <div class="lo-err" id="regErr"></div>
+      <button class="btn bp" style="width:100%;margin-top:8px;justify-content:center;padding:10px" id="regBtn" onclick="doRegister()">Đăng ký tài khoản</button>
+    </div>
+  </div>
+</div>
+
+<div class="hdr">
+  <h1>🏗️ KPI Phòng R&amp;D 2026</h1>
+  <div style="display:flex;align-items:center;gap:8px">
+    <span id="userDisp" style="font-size:11px;color:var(--blue);font-weight:500"></span>
+    <span id="autoSaveStatus" style="font-size:11px;color:var(--m)"></span>
+    <span id="syncTime" style="font-size:11px;color:var(--m)"></span>
+    <button class="btn bs" id="rfBtn" onclick="loadData()">🔄 Làm mới</button>
+    <button class="btn bp admin-only" id="sheetSyncBtn" onclick="openSheetModal()" style="display:none;padding:6px 10px;font-size:12px" title="Đồng bộ lên Google Sheet">📤 Google Sheet</button>
+    <button class="btn bs" id="themeBtn" onclick="toggleTheme()" title="Chuyển giao diện sáng/tối" style="padding:6px 10px;font-size:14px">☀️</button>
+    <button class="btn bs" id="logoutBtn" onclick="doLogout()" style="display:none;padding:6px 10px" title="Đăng xuất">🚪</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="sw('kpi')">📊 Bảng KPI</div>
+  <div class="tab" onclick="sw('report')">📋 Báo cáo</div>
+  <div class="tab" onclick="sw('board')">🗂️ Lịch việc</div>
+  <div class="tab" onclick="sw('history')">📈 Lịch sử KPI</div>
+  <div class="tab" onclick="sw('attendance')">📅 Điểm danh</div>
+  <div class="tab admin-only" onclick="sw('bonus')">💰 Quỹ thưởng</div>
+  <div class="tab admin-only" onclick="sw('config')">⚙️ Cấu hình</div>
+</div>
+
+<div class="content">
+
+<!-- ── TAB 1: BẢNG KPI ─────────────────────────── -->
+<div id="pane-kpi" class="pane active">
+  <div class="stats">
+    <div class="stat"><div class="sv" style="color:var(--blue)" id="s-m">—</div><div class="sl">Thành viên</div></div>
+    <div class="stat"><div class="sv" style="color:var(--t)" id="s-t">—</div><div class="sl">Tổng task</div></div>
+    <div class="stat"><div class="sv" style="color:var(--green)" id="s-d">—</div><div class="sl">Hoàn thành</div></div>
+    <div class="stat"><div class="sv" style="color:var(--blue)" id="s-i">—</div><div class="sl">Đang làm</div></div>
+    <div class="stat"><div class="sv" style="color:var(--red)" id="s-o">—</div><div class="sl">Quá hạn</div></div>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+    <span style="font-size:11px;color:var(--m);margin-right:2px">Xem theo kỳ:</span>
+    <button class="btn kpi-pf active" id="kpf-all" onclick="setKpiPeriod('all')">Tất cả</button>
+    <button class="btn kpi-pf" id="kpf-week" onclick="setKpiPeriod('week')">Tuần này</button>
+    <button class="btn kpi-pf" id="kpf-month" onclick="setKpiPeriod('month')">Tháng này</button>
+    <button class="btn kpi-pf" id="kpf-quarter" onclick="setKpiPeriod('quarter')">Quý này</button>
+    <button class="btn kpi-pf" id="kpf-year" onclick="setKpiPeriod('year')">Năm nay</button>
+    <span id="kpiPeriodLabel" style="font-size:11px;color:var(--blue);margin-left:4px;font-weight:600"></span>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <div id="kpiTable" style="padding:14px">
+      <div style="text-align:center;padding:36px;color:var(--m)"><span class="spin"></span> Đang tải...</div>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--m);margin-top:6px;text-align:center">Click vào thành viên để xem chi tiết điểm &amp; danh sách công việc</div>
+</div>
+
+<!-- ── TAB 2: BÁO CÁO ─────────────────────────── -->
+<div id="pane-report" class="pane">
+  <div class="card no-print">
+    <div class="ctitle">📋 Báo cáo kết quả &amp; kế hoạch công việc</div>
+    <div class="csub">Xem việc đã hoàn thành và kế hoạch đang thực hiện theo từng kỳ.</div>
+    <div class="period-btns">
+      <span class="pb active" onclick="setRptPeriod('week',this)">Tuần này</span>
+      <span class="pb" onclick="setRptPeriod('month',this)">Tháng này</span>
+      <span class="pb" onclick="setRptPeriod('quarter',this)">Quý này</span>
+      <span class="pb" onclick="setRptPeriod('year',this)">Năm nay</span>
+      <span class="pb" onclick="setRptPeriod('custom',this)">Tùy chọn</span>
+    </div>
+    <div id="rptCustom" style="display:none;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <span style="font-size:12px;color:var(--m)">Từ:</span>
+      <input class="inp" id="rptFrom" type="date" style="width:130px">
+      <span style="font-size:12px;color:var(--m)">Đến:</span>
+      <input class="inp" id="rptTo" type="date" style="width:130px">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span id="rptLabel" style="font-size:12px;color:var(--blue);font-weight:600"></span>
+      <button class="btn bp" onclick="renderReport()">📋 Xem báo cáo</button>
+      <button class="btn bg2" onclick="window.print()" id="printBtn" style="display:none">🖨️ In / Xuất PDF</button>
+    </div>
+  </div>
+  <div class="print-title" id="printTitle"></div>
+  <div id="rptContent"></div>
+</div>
+
+<!-- ── TAB 3: LỊCH SỬ KPI ─────────────────────── -->
+<div id="pane-history" class="pane">
+  <div class="card">
+    <div class="ctitle">💾 Lưu &amp; Xem lịch sử KPI</div>
+    <div class="csub">KPI được tự động lưu mỗi ngày. Bạn cũng có thể lưu thủ công.</div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <span style="font-size:12px;color:var(--m)">Lưu thủ công kỳ:</span>
+      <select class="inp" id="snapType">
+        <option value="week">Tuần này</option>
+        <option value="month">Tháng này</option>
+        <option value="quarter">Quý này</option>
+        <option value="year">Năm nay</option>
+      </select>
+      <button class="btn bp" onclick="saveSnapshotManual()">💾 Lưu ngay</button>
+    </div>
+    <div class="fsep"></div>
+    <div class="sec-row">
+      <span style="font-size:12px;color:var(--m)">Xem lịch sử:</span>
+      <select class="inp" id="histType" onchange="loadHistory()">
+        <option value="week">Tuần</option>
+        <option value="month" selected>Tháng</option>
+        <option value="quarter">Quý</option>
+        <option value="year">Năm</option>
+      </select>
+      <select class="inp" id="histYear" onchange="loadHistory()">
+        <option value="2026" selected>2026</option>
+        <option value="2025">2025</option>
+      </select>
+      <button class="btn bs" onclick="loadHistory()">🔄 Tải</button>
+      <button class="btn bs" onclick="forceResync()" title="Đồng bộ lại dữ liệu cũ">🔄 Đồng bộ lại</button>
+    </div>
+  </div>
+  <div id="histContent"><div style="text-align:center;padding:30px;color:var(--m);font-size:13px">Đang tải...</div></div>
+</div>
+
+<!-- ── TAB 5 (was 4): ĐIỂM DANH ──────────────────────── -->
+<div id="pane-attendance" class="pane">
+  <div class="card">
+    <div class="ctitle">📅 Điểm danh hôm nay</div>
+    <div class="csub" id="attDate">Loading...</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px" id="attActionArea">
+      <button class="btn bp" id="btnCheckIn" onclick="doCheckIn()" style="display:none">▶️ Bắt đầu làm việc</button>
+      <button class="btn bg2" id="btnCheckOut" onclick="doCheckOut()" style="display:none">⏹️ Kết thúc làm việc</button>
+      <span id="attMyStatus" style="font-size:12px;color:var(--m)"></span>
+    </div>
+    <div class="ctitle" style="font-size:12px;margin-top:8px">👥 Tình hình hôm nay</div>
+    <div id="attTodayGrid" class="att-grid"></div>
+  </div>
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <div class="ctitle" style="margin:0">📆 Lịch sử tuần này</div>
+      <select class="inp" id="attWeekSel" onchange="loadAttendanceWeek()" style="font-size:11px"></select>
+    </div>
+    <div id="attWeekTable"></div>
+  </div>
+</div>
+
+<!-- ── TAB 4: CẤU HÌNH ─────────────────────────── -->
+<div id="pane-config" class="pane">
+  <div class="info-box">
+    <b>✅ Tự động từ Base</b> · M1: sớm hạn→thưởng, muộn→trừ · M2: sản lượng × độ khó vs mục tiêu · M5: chất lượng review / cam kết done÷total
+  </div>
+  <div class="card" id="kpiQuotaCard">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+      <div>
+        <div class="ctitle" style="margin-bottom:3px">⚡ Cấu hình định mức KPI</div>
+        <div class="csub">Mỗi tiêu chí tính <b>3 mức</b> điểm. Tổng trọng số phải = 100%.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+        <button class="btn bs" onclick="loadKpiQuotaConfig()" title="Tải lại">🔄</button>
+        <button class="btn bp" onclick="saveKpiQuotaConfig()" style="font-weight:600">💾 Lưu định mức</button>
+      </div>
+    </div>
+    <div id="kqMetricRows"></div>
+  </div>
+  <div class="card">
+    <div class="ctitle">🏷️ Tên hiển thị thành viên</div>
+    <div class="csub">Gán tên thật cho từng username để dễ theo dõi trên bảng KPI</div>
+    <div id="nameMapRows"></div>
+    <button class="btn bp" style="margin-top:8px" onclick="saveNameMap()">💾 Lưu tên</button>
+  </div>
+  <div class="card" id="userMgmtCard" style="display:none">
+    <div class="ctitle">👤 Quản lý tài khoản (Admin)</div>
+    <div class="csub">Tạo, sửa, xoá tài khoản và thiết lập cấp bậc, lương cơ bản</div>
+    <div id="userListArea" style="margin-bottom:12px"></div>
+    <div class="fsep"></div>
+    <div style="font-size:12px;font-weight:600;color:var(--blue);margin-bottom:8px">➕ Tạo tài khoản mới</div>
+    <div class="fgrid">
+      <div class="fl"><label>Email</label><input class="inp" id="newUserEmail" placeholder="email@nsca.vn" style="width:160px"></div>
+      <div class="fl"><label>Mật khẩu</label><input class="inp" id="newUserPass" type="password" placeholder="••••••" style="width:120px"></div>
+      <div class="fl"><label>Họ tên</label><input class="inp" id="newUserName" placeholder="Nguyễn Văn A" style="width:150px"></div>
+      <div class="fl"><label>Username Base</label><input class="inp" id="newUserBase" placeholder="namph" style="width:100px"></div>
+      <div class="fl"><label>Cấp bậc</label>
+        <select class="inp" id="newUserLevel"><option value="junior">Junior ×1.0</option><option value="mid" selected>Mid ×1.5</option><option value="senior">Senior ×2.0</option><option value="lead">Lead ×2.5</option></select>
+      </div>
+      <div class="fl"><label>Lương cơ bản</label><input class="inp" id="newUserSalary" type="number" placeholder="0" style="width:110px"></div>
+      <div class="fl"><label>Mục tiêu KPI</label><input class="inp" id="newUserTarget" type="number" value="70" style="width:80px"></div>
+      <div class="fl"><label>Vai trò</label>
+        <select class="inp" id="newUserRole"><option value="member">Thành viên</option><option value="admin">Admin</option></select>
+      </div>
+      <div class="fl"><label>&nbsp;</label><button class="btn bp" onclick="createUser()">➕ Tạo</button></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="ctitle">🏅 Cấu hình xếp loại KPI</div>
+    <div class="csub">Điểm tối thiểu để đạt từng loại. Ví dụ: A≥90, B≥75, C≥60, D=dưới 60</div>
+    <div class="fgrid" id="gradeCfgRow">
+      <div><div style="font-size:11px;color:#34d399;margin-bottom:3px">Loại A ≥</div><input class="inp" id="gradeA" type="number" value="90" style="width:70px"></div>
+      <div><div style="font-size:11px;color:#3b82f6;margin-bottom:3px">Loại B ≥</div><input class="inp" id="gradeB" type="number" value="75" style="width:70px"></div>
+      <div><div style="font-size:11px;color:#f59e0b;margin-bottom:3px">Loại C ≥</div><input class="inp" id="gradeC" type="number" value="60" style="width:70px"></div>
+      <div><div style="font-size:11px;color:#ef4444;margin-bottom:3px">Loại D &lt;</div><input class="inp" id="gradeD" disabled style="width:70px;opacity:.6" value="60"></div>
+      <button class="btn bp" onclick="saveGradeConfig()">💾 Lưu xếp loại</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="ctitle">📅 Cấu hình Điểm danh (M6)</div>
+    <div class="csub">Giờ bắt đầu làm việc chuẩn · Đi trước hoặc đúng giờ = 100đ · Muộn = 70đ · Vắng = 0đ</div>
+    <div class="fgrid">
+      <div class="fl"><label>Giờ bắt đầu chuẩn</label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input class="inp" id="cfgStartHour" type="number" min="6" max="12" value="8" style="width:70px">
+          <span style="font-size:11px;color:var(--m)">h (mặc định 8:00)</span>
+        </div>
+      </div>
+      <div class="fl"><label>Số ngày làm việc/tháng (mặc định)</label>
+        <input class="inp" id="cfgWorkDays" type="number" min="1" max="31" value="22" style="width:80px">
+      </div>
+      <div class="fl"><label>&nbsp;</label>
+        <button class="btn bp" onclick="saveAttConfig()">💾 Lưu cấu hình</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="ctitle">📊 Mục tiêu task & Khối lượng (M2)</div>
+    <div class="csub">Số task hoàn thành mục tiêu / tuần cho từng thành viên. Sửa trực tiếp trong bảng Quản lý tài khoản.</div>
+    <div id="quotaList" style="margin-top:4px"></div>
+  </div>
+  <div class="card">
+    <div class="ctitle">👥 Thành viên dự án</div>
+    <div class="csub">Username Base, cách nhau dấu phẩy.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input class="inp" id="membersInp" style="flex:1;min-width:180px" placeholder="namph,rd01,bktcn,rd03">
+      <button class="btn bp" onclick="saveMembers()">💾 Lưu &amp; tải lại</button>
+      <button class="btn bs admin-only" onclick="discoverProjectMembers()" title="Lấy danh sách username thực tế từ Baseworks">🔍 Kiểm tra username Base</button>
+    </div>
+    <div id="memberDiscoverResult" style="display:none;margin-top:10px"></div>
+  </div>
+  <div class="card admin-only" id="baseApiCard">
+    <div class="ctitle">🔌 Cấu hình API Basework</div>
+    <div class="csub">Nhập thông tin kết nối — khi copy phần mềm này cho phòng ban khác, chỉ cần thay thế ở đây là xong</div>
+    <div id="baseApiStatus" style="font-size:12px;color:var(--m);margin-bottom:10px"></div>
+    <div class="fgrid">
+      <div class="fl" style="flex:2;min-width:260px">
+        <label>Base API URL</label>
+        <input class="inp" id="baseApiUrl" style="width:100%" placeholder="https://wework.base.vn/extapi/v2/" value="https://wework.base.vn/extapi/v2/">
+        <div style="font-size:10px;color:var(--m);margin-top:3px">Đường dẫn gốc của Basework API — giữ nguyên nếu dùng wework.base.vn</div>
+      </div>
+      <div class="fl">
+        <label>Project ID</label>
+        <input class="inp" id="baseApiProjectId" type="number" placeholder="197445" style="width:120px">
+        <div style="font-size:10px;color:var(--m);margin-top:3px">ID project trong Basework</div>
+      </div>
+      <div class="fl" style="flex:2;min-width:260px">
+        <label>Access Token</label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input class="inp" id="baseApiToken" type="password" placeholder="••• token hiện tại ẩn •••" style="flex:1">
+          <button class="btn bs" style="padding:5px 10px;font-size:11px" onclick="baseApiToggleToken()">👁</button>
+        </div>
+        <div style="font-size:10px;color:var(--m);margin-top:3px">access_token_v2 từ Basework · Bỏ trống = giữ token hiện tại</div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn bp" onclick="saveBaseApiConfig(false)">💾 Lưu cấu hình</button>
+      <button class="btn bs" onclick="saveBaseApiConfig(true)">🔍 Lưu &amp; Test kết nối</button>
+      <span id="baseApiTestResult" style="font-size:12px;align-self:center"></span>
+    </div>
+  </div>
+  <div class="card admin-only" id="baseworkWsCard">
+    <div class="ctitle">🔗 Kết nối Basework (WeWork)</div>
+    <div class="csub">Thêm workspace/project từ Base — mỗi phòng ban kết nối một Project ID riêng để theo dõi task, KPI và báo cáo</div>
+    <div id="bwWsList" style="margin:10px 0"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn bp" onclick="bwAddWorkspace()">➕ Thêm workspace</button>
+      <button class="btn bs" onclick="loadBaseworkWorkspaces()">🔄 Làm mới</button>
+    </div>
+    <div id="bwWsForm" style="display:none;margin-top:14px;padding:14px;background:var(--card2);border-radius:10px;border:1px solid var(--b)">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--blue)" id="bwFormTitle">➕ Thêm workspace mới</div>
+      <input type="hidden" id="bwFormId">
+      <div class="fgrid">
+        <div class="fl"><label>Tên phòng/nhóm</label><input class="inp" id="bwFormName" placeholder="Phòng Kinh doanh" style="width:160px"></div>
+        <div class="fl"><label>Project ID (Base)</label><input class="inp" id="bwFormProjectId" type="number" placeholder="197445" style="width:120px"></div>
+        <div class="fl"><label>Mô tả</label><input class="inp" id="bwFormDesc" placeholder="Mô tả ngắn..." style="width:200px"></div>
+        <div class="fl"><label>Màu</label><input class="inp" id="bwFormColor" type="color" value="#3b82f6" style="width:56px;padding:3px 4px;cursor:pointer"></div>
+        <div class="fl"><label>Loại dữ liệu</label>
+          <select class="inp" id="bwFormType" style="width:160px">
+            <option value="member_tasks">👤 Task thành viên</option>
+            <option value="project">🗂️ Dự án</option>
+          </select>
+        </div>
+        <div class="fl"><label>Trạng thái</label>
+          <select class="inp" id="bwFormActive" style="width:140px">
+            <option value="true">✅ Hoạt động</option>
+            <option value="false">⏸ Tắt</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn bp" onclick="bwSaveWorkspace()">💾 Lưu</button>
+        <button class="btn bs" onclick="bwCancelForm()">Hủy</button>
+      </div>
+    </div>
+  </div>
+  <div class="card admin-only">
+    <div class="ctitle">📊 Đồng bộ Google Sheet</div>
+    <div class="csub">Dán URL Web App từ Google Apps Script để đẩy KPI + đầu việc lên Google Sheet tự động</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+      <div class="fl" style="flex:1;min-width:260px">
+        <label>Google Sheet Web App URL</label>
+        <input class="inp" id="sheetsUrlInp" style="width:100%" placeholder="https://script.google.com/macros/s/AKfy.../exec">
+      </div>
+      <button class="btn bs" onclick="saveSheetUrl()">💾 Lưu URL</button>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn bp" onclick="syncToSheet('all')">📤 Đẩy KPI + Đầu việc</button>
+      <button class="btn bs" onclick="syncToSheet('kpi')">📊 Chỉ KPI</button>
+      <button class="btn bs" onclick="syncToSheet('tasks')">📋 Chỉ Đầu việc</button>
+    </div>
+    <div id="sheetSyncStatus" style="margin-top:8px;font-size:11px;color:var(--m)"></div>
+  </div>
+</div>
+
+<!-- ── TAB: QUỸ THƯỞNG ───────────────────────────────── -->
+<div id="pane-bonus" class="pane">
+  <div class="card">
+    <div class="ctitle">💰 Phân bổ Quỹ thưởng</div>
+    <div class="csub">Tính thưởng theo Điểm KPI × Hệ số cấp bậc × Lương cơ bản</div>
+    <div class="fgrid">
+      <div class="fl"><label>Loại kỳ</label>
+        <select class="inp" id="bfPeriodType" onchange="bfPeriodChange()" style="width:110px">
+          <option value="week">Tuần</option><option value="month">Tháng</option>
+          <option value="quarter">Quý</option><option value="year">Năm</option>
+        </select>
+      </div>
+      <div class="fl"><label>Kỳ cụ thể</label>
+        <select class="inp" id="bfPeriodKey" style="width:140px"></select>
+      </div>
+      <div class="fl"><label>Tổng quỹ thưởng (VNĐ)</label>
+        <input class="inp" id="bfTotal" type="number" placeholder="1000000000" style="width:160px">
+      </div>
+      <div class="fl"><label>% cho admin/quản lý</label>
+        <div style="display:flex;align-items:center;gap:6px">
+          <input class="inp" id="bfAdminPct" type="number" value="0" min="0" max="100" style="width:70px">
+          <span style="font-size:11px;color:var(--m)">%</span>
+        </div>
+      </div>
+      <div class="fl" style="flex:1;min-width:160px"><label>Ghi chú</label>
+        <input class="inp" id="bfNotes" placeholder="Thưởng Q2/2025...">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn bp" onclick="calcBonus()">🧮 Tính thưởng</button>
+      <button class="btn bs" onclick="saveBonusFund()">💾 Lưu kết quả</button>
+    </div>
+  </div>
+  <div class="card" id="bfResultCard" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div class="ctitle" style="margin:0">📊 Kết quả phân bổ</div>
+      <button class="btn bp" onclick="exportBonusExcel()">📥 Xuất CSV</button>
+    </div>
+    <div id="bfResultTable"></div>
+  </div>
+  <div class="card">
+    <div class="ctitle">📋 Lịch sử quỹ thưởng</div>
+    <div id="bfHistList" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<!-- ── TAB: LỊCH CÔNG VIỆC ────────────────────────────────── -->
+<div id="pane-board" class="pane">
+  <div class="card no-print" style="margin-bottom:12px">
+    <div class="ctitle">🗂️ Lịch công việc theo thành viên</div>
+    <div class="csub">Xem ai đang làm gì trong kỳ đã chọn — mỗi thành viên một cột.</div>
+    <div class="board-nav">
+      <div class="period-btns" style="margin-bottom:0">
+        <span class="pb active" id="brd-week" onclick="setBoardPeriod('week',this)">Tuần</span>
+        <span class="pb" id="brd-month" onclick="setBoardPeriod('month',this)">Tháng</span>
+        <span class="pb" id="brd-quarter" onclick="setBoardPeriod('quarter',this)">Quý</span>
+        <span class="pb" id="brd-year" onclick="setBoardPeriod('year',this)">Năm</span>
+      </div>
+      <button class="btn bs" style="padding:5px 10px" onclick="boardShift(-1)">◀</button>
+      <span id="boardLabel" style="font-size:13px;font-weight:600;color:var(--blue);min-width:170px;text-align:center;display:inline-block"></span>
+      <button class="btn bs" style="padding:5px 10px" onclick="boardShift(+1)">▶</button>
+      <button class="btn bp" onclick="renderBoard()">🔄</button>
+    </div>
+    <div id="boardSummary" style="font-size:11px;color:var(--m)"></div>
+  </div>
+  <div id="boardContent" style="overflow-x:auto"></div>
+</div>
+
+</div><!-- /content -->
+
+<!-- ── MODAL ───────────────────────────────────── -->
+<div id="memberModal" class="modal-overlay" onclick="closeModal(event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-hdr" id="modalHdr"></div>
+    <div class="modal-score-sec" id="modalScore"></div>
+    <div class="modal-metrics" id="modalMetrics"></div>
+    <div class="modal-tasks" id="modalTasks"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const WK = 'https://nsca-kpi-worker.rd-053.workers.dev';
+const SB_URL = 'https://eyadkqmgorhtlhwnkynm.supabase.co';
+const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5YWRrcW1nb3JodGxod25reW5tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY0OTYzODcsImV4cCI6MjA5MjA3MjM4N30.I4QiHAfVAoV_IrzgS6-1T4n59pdswCGlOZmpgajJYJM';
+let authState = null; // {access_token, user, profile, email}
+const PROJ = '197445';
+const K = {members:'rd_members',cfg:'rd_cfg3',m1:'rd_m1c',m2:'rd_m2c',autosave:'rd_autosave4'};
+
+// ── Cloud config sync ─────────────────────────────────────────────────────
+// Push a single config key to Supabase (fire-and-forget, silently fails)
+function pushCfgCloud(key, value){
+  try{
+    api('/api/rd/config',{method:'PUT',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({key,value})}).catch(()=>{});
+  }catch(e){}
+}
+// Load all config from cloud → write to localStorage → return true if any loaded
+async function loadCfgCloud(){
+  // Default Google Sheet URL nếu chưa được set
+  if(!localStorage.getItem('rd_sheets_url')) localStorage.setItem('rd_sheets_url','https://script.google.com/macros/s/AKfycbx4bST7-0YvoLH9yLHENGhmCf5ahOJFMqkLfKT7Nt1DEbReSOSlq4XCdpeZFOOuKiGOeQ/exec');
+  try{
+    const d=await api('/api/rd/config');
+    const c=d.config||{};
+    let any=false;
+    const map={
+      [K.cfg]:'kpi_weights',[K.m1]:'kpi_m1',[K.m2]:'kpi_m2',
+      [K.members]:'kpi_members',['rd_namemap']:'kpi_namemap',
+      ['rd_att_cfg']:'kpi_att',['rd_grade_cfg']:'kpi_grade',['rd_sheets_url']:'kpi_sheets_url'
+    };
+    Object.entries(map).forEach(([lsKey,cloudKey])=>{
+      if(c[cloudKey]!==undefined){
+        const v=typeof c[cloudKey]==='string'?c[cloudKey]:JSON.stringify(c[cloudKey]);
+        localStorage.setItem(lsKey,v);any=true;
+      }
+    });
+    return any;
+  }catch(e){return false;}
+}
+
+// ── 5 metrics — ALL AUTO ─────────────────────────────────────────────────
+const METRICS = [
+  {key:'w1',name:'Hoàn thành đúng hạn',color:'#3b82f6',
+   desc:'Điểm từng task: sớm hạn → thưởng, muộn → trừ dần, quá hạn chưa xong → điểm thấp',
+   hasDeep:true, deepId:'m1CfgPanel'},
+  {key:'w2',name:'Khối lượng công việc',color:'#f97316',
+   desc:'Số task hoàn thành × hệ số độ khó / mục tiêu; vượt mục tiêu được cộng thưởng',
+   hasDeep:true, deepId:'m2CfgPanel'},
+  {key:'w3',name:'Xử lý việc ưu tiên',color:'#f59e0b',
+   desc:'% task urgent=true hoặc important=true đã hoàn thành · mặc định 80 nếu không có task ưu tiên',
+   hasDeep:false},
+  {key:'w4',name:'Độ khó công việc',   color:'#8b5cf6',
+   desc:'Điểm độ khó trung bình của tất cả task được giao: số ngày (since→deadline) + urgent (+10đ) + important (+5đ)',
+   hasDeep:false},
+  {key:'w5',name:'Chất lượng & Cam kết',color:'#34d399',
+   desc:'Nếu có review từ Base: điểm TB review (Tốt=100, Đạt=70, Không đạt=30) · Nếu chưa có review: done/total — nhận nhiều mà bỏ dở sẽ bị trừ điểm · Khác M2: M2 đo sản lượng vs mục tiêu, M5 đo chất lượng thực hiện',
+   hasDeep:false},
+  {key:'w6',name:'Điểm danh',color:'#06b6d4',
+   desc:'Tỉ lệ đi làm đúng giờ trong kỳ · Đúng giờ=100đ · Muộn=70đ · Vắng=0đ · Mặc định 80 nếu chưa điểm danh',
+   hasDeep:false},
+];
+const DEF_W = {w1:35,w2:25,w3:12,w4:10,w5:8,w6:10};
+
+// ── Deep config defaults ────────────────────────────────────────────────
+const DEF_M1 = {
+  earlyDays:1,      // days early to earn bonus
+  earlyBonus:10,    // bonus points for early (max score = 100+earlyBonus)
+  late1:10,         // penalty points PER DAY for 1–3 days late
+  late2:40,         // total penalty for 4–7 days late
+  late3:60,         // total penalty for >7 days late
+  overdueScore:20,  // score for tasks overdue (not done)
+};
+const DEF_M2 = {
+  target:5,         // tasks/month target
+  overBonus:5,      // bonus points per extra task-equivalent beyond target
+  overMax:120,      // max M2 score
+  diffWeight:true,  // weight by difficulty (harder tasks count more)
+  weeklyQuota:5,    // định mức task/tuần — M5 đo so với quota, không phải total
+  m5OverBonus:3,    // thưởng M5 mỗi task hoàn thành vượt quota
+};
+
+let projData = null, rptPeriodType = 'week', histChart = null, kpiPeriod = 'all';
+let _lastLoadTime = null, _autoRefreshTimer = null;
+
+// ── Storage ──────────────────────────────────────────────────────────────
+const getCfg  = ()=>{try{return JSON.parse(localStorage.getItem(K.cfg))||DEF_W}catch(e){return{...DEF_W}}};
+const getM1C  = ()=>{try{return{...DEF_M1,...JSON.parse(localStorage.getItem(K.m1)||'{}')} }catch(e){return{...DEF_M1}}};
+const getM2C  = ()=>{try{return{...DEF_M2,...JSON.parse(localStorage.getItem(K.m2)||'{}')} }catch(e){return{...DEF_M2}}};
+const getMembers=()=>(localStorage.getItem(K.members)||'').split(',').map(s=>s.trim()).filter(Boolean);
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+const scColor=s=>s>=85?'#34d399':s>=70?'#60a5fa':s>=55?'#fbbf24':'#f87171';
+const scClass=s=>s>=85?'hs-g':s>=70?'hs-b':s>=55?'hs-y':'hs-r';
+const fmtDl=ts=>ts>0?new Date(ts*1000).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'}):null;
+const fmtDate=s=>s?new Date(s).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):'';
+
+// ── M1: per-task timeliness scoring ──────────────────────────────────────
+function taskTimeliness(t, c) {
+  if(!t.deadline) return null;
+  if(t.status==='inprogress') return null; // not yet due, don't count
+  if(t.status==='done') {
+    if(t.completed_time>0) {
+      const daysEarly = (t.deadline - t.completed_time) / 86400;
+      if(daysEarly >= c.earlyDays) return Math.min(100 + c.earlyBonus, 100 + c.earlyBonus);
+      if(t.completed_time <= t.deadline) return 100;
+      const daysLate = (t.completed_time - t.deadline) / 86400;
+      // Hoàn thành trễ vẫn có điểm, không bao giờ về 0
+      if(daysLate <= 3) return Math.max(10, 100 - c.late1 * daysLate);
+      if(daysLate <= 7) return Math.max(10, 100 - c.late2);
+      return Math.max(10, 100 - c.late3); // trễ nhiều nhất vẫn ≥10đ vì đã hoàn thành
+    }
+    // Không có completed_time → task đã xong nhưng Base không ghi thời điểm
+    // → cho điểm trung tính 80 (đã làm xong, không rõ đúng hạn không)
+    return 80;
+  }
+  if(t.status==='overdue') return c.overdueScore;
+  return null;
+}
+
+// ── Main score calculator ─────────────────────────────────────────────────
+// FAIRNESS RULES:
+//   • 0 task → tất cả M = 0, score = 0 (không có gì để đánh giá)
+//   • Có task nhưng không có deadline → M1 = 0 (không đo được đúng hạn)
+//   • Có task nhưng không có urgent/important → M3 = 80 (làm việc thường = trung bình)
+//   • M2, M5 luôn phản ánh thực tế (0 nếu không hoàn thành)
+function calcScore(r) {
+  const cfg=getCfg(), m1c=getM1C(), m2c=getM2C();
+  const tasks=r.tasks||[];
+  const noTasks = tasks.length === 0;
+
+  // M1: avg timeliness per task — 0 nếu không có task hoặc không có deadline
+  const tlScores=tasks.map(t=>taskTimeliness(t,m1c)).filter(s=>s!==null);
+  const m1 = noTasks ? 0
+           : tlScores.length ? Math.min(100+m1c.earlyBonus, tlScores.reduce((a,b)=>a+b,0)/tlScores.length)
+           : 0; // có task nhưng không có deadline nào → không đo được → 0
+
+  // M2: difficulty-weighted volume vs target + subtask weighting
+  //   task_weight = 1 + min(subtask_count × 0.3, 1.5) → 0 sub=1.0×, 5+ sub=2.5×
+  //   effDone = Σ(task_weight × difficulty/65) cho done tasks
+  const doneTasks=tasks.filter(t=>t.status==='done');
+  let m2 = 0;
+  if(!noTasks) {
+    if(m2c.diffWeight) {
+      const effDone=doneTasks.reduce((s,t)=>{
+        const tw=1+Math.min((t.subtask_count||0)*0.3,1.5);
+        return s+tw*(t.difficulty||65)/65;
+      },0);
+      const base=m2c.target>0?Math.min(100,effDone/m2c.target*100):0;
+      m2=Math.min(m2c.overMax, base + Math.max(0,Math.floor(effDone)-m2c.target)*m2c.overBonus);
+    } else {
+      const done=doneTasks.length, tgt=m2c.target;
+      m2=Math.min(m2c.overMax, (tgt>0?Math.min(100,done/tgt*100):0) + Math.max(0,done-tgt)*m2c.overBonus);
+    }
+  }
+
+  const noDone = doneTasks.length === 0;
+
+  // M3: % task urgent/important đã hoàn thành
+  //   — 0 nếu không có task hoặc chưa hoàn thành task nào
+  //   — 80 nếu có task đã xong nhưng không có task ưu tiên (không đo được, dùng trung tính)
+  //   — % thực tế nếu có task urgent/important
+  const priTasks=tasks.filter(t=>t.urgent||t.important);
+  const m3 = (noTasks || noDone) ? 0
+           : priTasks.length > 0
+             ? Math.min(100,Math.round(priTasks.filter(t=>t.status==='done').length/priTasks.length*100))
+             : 80; // có task xong, nhưng không có task ưu tiên → trung tính
+
+  // M4: avg difficulty của task đã hoàn thành
+  const m4 = noDone ? 0 : Math.round(doneTasks.reduce((s,t)=>s+(t.difficulty||65),0)/doneTasks.length);
+
+  // M5: Chất lượng & Cam kết
+  //   Ưu tiên dùng review score từ Base (1=tốt→100, 2=đạt→70, 3=không đạt→30)
+  //   Nếu chưa có review → fallback: done/total (cam kết hoàn thành)
+  //   Khác M2: M2 đo sản lượng vs mục tiêu cố định; M5 đo chất lượng thực hiện
+  let m5=0;
+  if(!noTasks){
+    const revScale={1:100,2:70,3:30};
+    const reviewedDone=doneTasks.filter(t=>t.review>0);
+    if(reviewedDone.length>0){
+      // Có review: dùng điểm review trung bình của task đã hoàn thành
+      m5=Math.round(reviewedDone.reduce((s,t)=>s+(revScale[t.review]||70),0)/reviewedDone.length);
+    }else{
+      // Chưa có review: đo tỷ lệ cam kết — done/total (không dùng quota như M2 dùng target)
+      // Done=0 → 0; Done=total → 100; phản ánh "nhận nhiều mà bỏ dở sẽ bị trừ"
+      m5=noDone?0:Math.min(100,Math.round(doneTasks.length/tasks.length*100));
+    }
+  }
+
+  // M6 attendance: 0 if no tasks, và 0 nếu không có dữ liệu điểm danh thực tế (không default 80)
+  if(noTasks) return {score:0,m1:0,m2:0,m3:0,m4:0,m5:0,m6:0};
+  const m6=(r.m6!==undefined&&r.m6!==null&&r.m6!=='')?+r.m6:0;
+  const score=(m1*cfg.w1+m2*cfg.w2+m3*cfg.w3+m4*cfg.w4+m5*cfg.w5+(cfg.w6||0)*m6)/100;
+  return {score:Math.round(score*10)/10,m1:Math.round(m1*10)/10,m2:Math.round(m2*10)/10,m3,m4,m5,m6:Math.round(m6)};
+}
+
+function diffLabel(d){
+  if(d>=90)return{l:'Rất khó',c:'#f87171'};if(d>=78)return{l:'Khó',c:'#fb923c'};
+  if(d>=65)return{l:'TB',c:'#fbbf24'};if(d>=52)return{l:'Dễ',c:'#60a5fa'};return{l:'Rất dễ',c:'#94a3b8'};
+}
+
+// ── Frontend quota-based KPI scorer (mirrors Worker calcScoreByQuota) ──────
+// Dùng KQ_METRICS (đã được loadKpiQuotaConfig() cập nhật) để tính điểm từ raw data
+// r phải có: tasks[], delegated_tasks, avg_difficulty, att_score?, unexcused_count?
+// periodDays: số ngày của kỳ cần tính
+function calcKqScore(r, periodDays){
+  const tasks = r.tasks||[];
+  const doneTasks = tasks.filter(t=>t.status==='done');
+  const overdue   = tasks.filter(t=>t.status==='overdue').length;
+  const importantDone = doneTasks.filter(t=>t.urgent||t.important).length;
+  const delegated = r.delegated_tasks||0;
+  const pd = Math.max(periodDays||30, 1);
+  const weeks  = pd/7;
+  const months = pd/30;
+
+  function tier3(actual, quota, below, above, dir){
+    if(dir==='high') return actual>quota?above : actual===quota?100 : below;
+    else             return actual<quota?above : actual===quota?100 : below;
+  }
+
+  let total=0; const b={};
+  for(const m of KQ_METRICS){
+    const cfg=m.def; const w=(cfg.weight||0)/100;
+    if(!(w>0)) continue;
+    const below=cfg.below??60, above=cfg.above??120, dir=m.dir;
+    let score, actual, quotaScaled;
+
+    if(m.id==='task'){
+      const reg=Math.max(doneTasks.length-importantDone,0);
+      const eff=reg+importantDone*2;
+      const qp=(cfg.quota??5)*weeks;
+      const lin=qp>0?Math.min(eff/qp*100,above):0;
+      b[m.id]=Math.round(Math.max(0,lin));
+      total+=b[m.id]*w; continue;
+    }else if(m.id==='overdue'){
+      actual=overdue/weeks; quotaScaled=cfg.quota??1;
+    }else if(m.id==='hard'){
+      actual=Math.round(doneTasks.length*((r.avg_difficulty||65)>70?0.5:0.2));
+      quotaScaled=(cfg.quota??1)*weeks;
+    }else if(m.id==='quality'){
+      actual=r.failed_count!=null?r.failed_count/months:0; quotaScaled=cfg.quota??1;
+    }else if(m.id==='attendance'){
+      actual=r.att_score!=null?r.att_score:100; quotaScaled=cfg.quota??90;
+    }else if(m.id==='unexcused'){
+      actual=r.unexcused_count!=null?r.unexcused_count/months:0; quotaScaled=cfg.quota??0;
+    }else if(m.id==='delegation'){
+      actual=delegated; quotaScaled=(cfg.quota??3)*weeks;
+    }else continue;
+
+    const eps=0.001;
+    if(Math.abs(actual-quotaScaled)<=eps) score=100;
+    else score=tier3(actual,quotaScaled,below,above,dir);
+    b[m.id]=Math.round(score); total+=score*w;
+  }
+  return{score:Math.round(total*10)/10, kq_breakdown:b};
+}
+// Kiểm tra có KQ_METRICS nào có weight > 0 không (tức là đã cấu hình quota)
+function hasKqConfig(){ return KQ_METRICS.some(m=>(m.def.weight||0)>0); }
+
+// ── Period helpers ────────────────────────────────────────────────────────
+function isoWeek(date=new Date()){
+  const d=new Date(date);d.setHours(0,0,0,0);d.setDate(d.getDate()+3-(d.getDay()||7)-3);
+  const w1=new Date(d.getFullYear(),0,4);
+  const wn=1+Math.round(((d-w1)/86400000-3+(w1.getDay()||7))/7);
+  return `${d.getFullYear()}-W${String(wn).padStart(2,'0')}`;
+}
+function weekRange(key){
+  const[yr,wp]=key.split('-W');const wn=parseInt(wp);
+  const jan4=new Date(parseInt(yr),0,4);
+  const mon=new Date(jan4);mon.setDate(jan4.getDate()-(jan4.getDay()||7)+1+(wn-1)*7);
+  const sun=new Date(mon);sun.setDate(mon.getDate()+6);
+  return{from:mon.toISOString().slice(0,10),to:sun.toISOString().slice(0,10)};
+}
+function periodKey(type,date=new Date()){
+  const y=date.getFullYear(),m=date.getMonth()+1;
+  if(type==='week')return isoWeek(date);
+  if(type==='month')return`${y}-${String(m).padStart(2,'0')}`;
+  if(type==='quarter')return`${y}-Q${Math.ceil(m/3)}`;
+  return String(y);
+}
+function periodRange(type,key){
+  if(type==='week')return weekRange(key);
+  if(type==='month'){const[y,m]=key.split('-');
+    const last=new Date(+y,+m,0);
+    const toLoc=`${last.getFullYear()}-${String(last.getMonth()+1).padStart(2,'0')}-${String(last.getDate()).padStart(2,'0')}`;
+    return{from:`${y}-${m}-01`,to:toLoc};}
+  if(type==='quarter'){const[y,q]=key.split('-Q'),sm=(+q-1)*3+1,em=+q*3;
+    const lastQ=new Date(+y,em,0);
+    const toQ=`${lastQ.getFullYear()}-${String(lastQ.getMonth()+1).padStart(2,'0')}-${String(lastQ.getDate()).padStart(2,'0')}`;
+    return{from:`${y}-${String(sm).padStart(2,'0')}-01`,to:toQ};}
+  return{from:`${key}-01-01`,to:`${key}-12-31`};
+}
+function periodLabel(type,key){
+  if(type==='week'){const r=weekRange(key);return`Tuần ${key.split('-W')[1]} (${fmtDate(r.from)}–${fmtDate(r.to)})`;}
+  if(type==='month'){const[y,m]=key.split('-');return`Tháng ${+m}/${y}`;}
+  if(type==='quarter'){const[y,q]=key.split('-Q');return`Quý ${q} năm ${y}`;}
+  return`Năm ${key}`;
+}
+function adjacentPeriod(type,key,offset){
+  if(type==='week'){
+    // get Monday of this ISO week, shift by offset*7 days
+    const[y,w]=key.split('-W').map(Number);
+    const jan4=new Date(y,0,4);
+    const mon=new Date(jan4);mon.setDate(jan4.getDate()-(jan4.getDay()||7)+1+(w-1)*7+offset*7);
+    return isoWeek(mon);
+  }
+  if(type==='month'){
+    const[y,m]=key.split('-').map(Number);
+    const d=new Date(y,m-1+offset,1);
+    return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  if(type==='quarter'){
+    const[y,q]=key.split('-Q').map(Number);
+    const total=y*4+(q-1)+offset;
+    return`${Math.floor(total/4)}-Q${total%4+1}`;
+  }
+  return String(+key+offset);
+}
+
+// ── API & Load ────────────────────────────────────────────────────────────
+async function api(path,opts){const r=await fetch(WK+path,opts||{});if(!r.ok){let e='HTTP '+r.status;try{const d=await r.clone().json();e=d.error||d.message||e;}catch(ex){}throw new Error(e);}return r.json();}
+
+async function loadData(){
+  const btn=document.getElementById('rfBtn');
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
+  document.getElementById('kpiTable').innerHTML='<div style="text-align:center;padding:36px;color:var(--m)"><span class="spin"></span> Đang tải từ Base...</div>';
+  try{
+    // Fetch ALL project members (no filter) so new members are auto-discovered
+    projData=await api('/api/project-kpi/'+PROJ+'/full');
+    window._lastKPI=projData;
+    // Fetch attendance for current month and merge as m6
+    try{
+      const now=new Date();
+      const attFrom=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);
+      const attTo=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().slice(0,10);
+      const attMap=await api('/api/rd/attendance/summary?from='+attFrom+'&to='+attTo);
+      if(projData?.results) projData.results=projData.results.map(r=>({...r,m6:attMap[r.username]?.score??null}));
+    }catch(e){}
+    // Discover new project members not in the configured list (admin-only notification)
+    if(projData?.results?.length){
+      const allMs=projData.results.map(r=>r.username).filter(Boolean);
+      const current=getMembers();
+      const newMs=allMs.filter(u=>u&&!current.includes(u));
+      if(newMs.length>0&&window._isAdmin){
+        toast('🔍 Phát hiện username mới trong dự án: '+newMs.join(', ')+'. Vào ⚙️ Cài đặt → Thành viên để thêm vào.',false,8000);
+      }
+    }
+    // Đảm bảo tất cả thành viên đã cấu hình đều xuất hiện (dù chưa có task)
+    if(projData){
+      const configMs=getMembers();
+      if(configMs.length){
+        const existingMs=new Set((projData.results||[]).map(r=>r.username));
+        configMs.forEach(uname=>{
+          if(!existingMs.has(uname)){
+            (projData.results=projData.results||[]).push({
+              username:uname,
+              full_name:getDisplayName(uname,uname),
+              total_tasks:0,done_tasks:0,inprogress_tasks:0,
+              overdue_tasks:0,delegated_tasks:0,tasks:[],
+              avg_difficulty:65,avg_review:null,has_review_data:false
+            });
+          }
+        });
+      }
+    }
+    renderKPI();
+    _lastLoadTime=new Date();
+    updateSyncTime();
+    // Start auto-refresh if not already running
+    if(!_autoRefreshTimer){
+      _autoRefreshTimer=setInterval(()=>{
+        if(document.visibilityState==='visible'&&projData&&!document.getElementById('rfBtn').disabled){
+          loadData();
+        }
+      },5*60*1000); // every 5 minutes
+      setInterval(updateSyncTime,60*1000); // refresh age display every minute
+    }
+    autoSaveAll();
+  }catch(e){
+    document.getElementById('kpiTable').innerHTML='<div style="padding:30px;text-align:center;color:var(--red)">❌ '+e.message+'</div>';
+    toast('Lỗi: '+e.message,true);
+  }finally{btn.disabled=false;btn.innerHTML='🔄 Làm mới';}
+}
+
+function updateSyncTime(){
+  const el=document.getElementById('syncTime');
+  if(!_lastLoadTime){el.textContent='';return;}
+  const age=Math.floor((Date.now()-_lastLoadTime)/60000);
+  const timeStr='Cập nhật '+_lastLoadTime.toLocaleTimeString('vi-VN');
+  el.textContent=age>0?timeStr+' ('+age+' phút trước)':timeStr;
+  el.style.color=age>=5?'var(--red)':age>=2?'var(--yellow)':'var(--m)';
+  el.title=age>=5?'Dữ liệu đã cũ — đang tự động làm mới':'Dữ liệu mới';
+}
+
+// ── TAB 1: KPI TABLE ─────────────────────────────────────────────────────
+function setKpiPeriod(p){
+  kpiPeriod=p;
+  document.querySelectorAll('.kpi-pf').forEach(b=>b.classList.remove('active'));
+  const btn=document.getElementById('kpf-'+p);
+  if(btn)btn.classList.add('active');
+  const lbl=document.getElementById('kpiPeriodLabel');
+  if(lbl){
+    if(p==='all'){lbl.textContent='';}
+    else{const k=periodKey(p),r=periodRange(p,k);lbl.textContent=periodLabel(p,k)+' ('+fmtDate(r.from)+'–'+fmtDate(r.to)+')';}
+  }
+  renderKPI();
+}
+function getKpiFilteredResults(){
+  if(!projData)return[];
+  const raw=projData.results||[];
+  if(kpiPeriod==='all')return raw;
+  const k=periodKey(kpiPeriod),{from,to}=periodRange(kpiPeriod,k);
+  const fTs=new Date(from).getTime()/1000,tTs=new Date(to+'T23:59:59').getTime()/1000;
+  const pd=Math.round((new Date(to+'T23:59:59')-new Date(from))/86400000)+1;
+  const useKq=hasKqConfig();
+  return raw.map(r=>{
+    const ftasks=(r.tasks||[]).filter(t=>t.deadline&&t.deadline>=fTs&&t.deadline<=tTs);
+    const done=ftasks.filter(t=>t.status==='done').length;
+    const inprog=ftasks.filter(t=>t.status==='inprogress').length;
+    const over=ftasks.filter(t=>t.status==='overdue').length;
+    const filtered={...r,tasks:ftasks,total_tasks:ftasks.length,done_tasks:done,inprogress_tasks:inprog,overdue_tasks:over};
+    // Tính lại kq_score cho kỳ đã lọc
+    if(useKq){
+      const kq=calcKqScore(filtered,pd);
+      return{...filtered,kq_score:kq.score,kq_breakdown:kq.kq_breakdown};
+    }
+    return{...filtered,kq_score:null,kq_breakdown:null};
+  });
+}
+function renderKPI(){
+  if(!projData)return;
+  let res=getKpiFilteredResults();
+  // Lọc theo danh sách thành viên cấu hình (chỉ hiển thị team đã chọn)
+  const configMembers=getMembers();
+  if(configMembers.length) res=res.filter(r=>configMembers.includes(r.username));
+  // Member chỉ thấy KPI của chính mình
+  if(!window._isAdmin&&window._myUsername){
+    res=res.filter(r=>r.username===window._myUsername);
+  }
+  document.getElementById('s-m').textContent=res.length;
+  document.getElementById('s-t').textContent=res.reduce((s,r)=>s+(r.total_tasks||0),0);
+  document.getElementById('s-d').textContent=res.reduce((s,r)=>s+(r.done_tasks||0),0);
+  document.getElementById('s-i').textContent=res.reduce((s,r)=>s+(r.inprogress_tasks||0),0);
+  document.getElementById('s-o').textContent=res.reduce((s,r)=>s+(r.overdue_tasks||0),0);
+  const ranked=res.map(r=>{
+    // Ưu tiên kq_score (quota-based) từ Worker; fallback sang calcScore (M1-M5) nếu chưa có
+    const sc=(r.kq_score!=null)
+      ?{score:r.kq_score,kq_breakdown:r.kq_breakdown,m1:0,m2:0,m3:0,m4:0,m5:0,m6:0}
+      :calcScore(r);
+    return{...r,...sc};
+  }).sort((a,b)=>b.score-a.score);
+  let h='<div class="tw"><table><thead><tr>'
+    +'<th style="width:32px">Hạng</th><th>Thành viên</th><th>Điểm KPI</th>'
+    +'<th style="text-align:right;padding-right:14px;font-weight:400;font-size:11px">Click để xem chi tiết →</th>'
+    +'</tr></thead><tbody>';
+  ranked.forEach((r,i)=>{
+    const rk=i+1,rc=rk===1?'r1':rk===2?'r2':rk===3?'r3':'rn';
+    const col=scColor(r.score),bw=Math.min(r.score,100).toFixed(0);
+    const medal=rk===1?'🥇 ':rk===2?'🥈 ':rk===3?'🥉 ':'';
+    const dispName=getDisplayName(r.username,r.full_name||r.username);
+    const hasWork=(r.total_tasks||0)>0;
+    const noTaskBadge=!hasWork?'<span style="font-size:10px;color:var(--yellow);background:rgba(251,191,36,.12);padding:1px 6px;border-radius:4px;margin-left:6px">Chưa có task</span>':'';
+    h+=`<tr class="krow" onclick="showMemberModal('${r.username}')">
+      <td><div class="rk ${rc}">${rk}</div></td>
+      <td><div style="font-weight:600;font-size:13px">${medal}${dispName}${noTaskBadge}</div>
+          <div style="font-size:11px;color:var(--m)">${r.username}</div></td>
+      <td style="min-width:200px">
+        ${hasWork?`<div class="sbar-wrap">
+          <div class="sbar"><div class="sbar-f" style="width:${bw}%;background:${col}"></div></div>
+          <div class="sval" style="color:${col}">${r.score.toFixed(1)} ${gradeTag(r.score)}</div>
+        </div>`:`<span style="color:var(--m);font-size:12px">—</span>`}
+      </td>
+      <td style="text-align:right;padding-right:14px">
+        <span style="font-size:11px;color:var(--m)">
+          ${r.total_tasks||0} task · <span style="color:var(--green)">${r.done_tasks||0} xong</span>
+          ${(r.overdue_tasks||0)>0?' · <span style="color:var(--red)">'+r.overdue_tasks+' quá hạn</span>':''}
+        </span>
+      </td>
+    </tr>`;
+  });
+  h+='</tbody></table></div>';
+  document.getElementById('kpiTable').innerHTML=h;
+  window._kpiRanked=ranked;
+}
+
+// ── MODAL ─────────────────────────────────────────────────────────────────
+function showMemberModal(username){
+  if(!window._kpiRanked)return;
+  const r=window._kpiRanked.find(x=>x.username===username);
+  if(!r)return;
+  const col=scColor(r.score),rank=window._kpiRanked.indexOf(r)+1;
+  const medal=rank===1?'🥇 ':rank===2?'🥈 ':rank===3?'🥉 ':'';
+  const rc=rank===1?'r1':rank===2?'r2':rank===3?'r3':'rn';
+  document.getElementById('modalHdr').innerHTML=`
+    <div class="rk ${rc}" style="width:32px;height:32px;font-size:13px">${rank}</div>
+    <div><div style="font-size:15px;font-weight:700">${medal}${r.full_name||r.username}</div>
+         <div style="font-size:11px;color:var(--m)">${r.username} · Hạng #${rank}</div></div>
+    <button class="modal-close" onclick="closeModal()">✕</button>`;
+  const bw=Math.min(r.score,100).toFixed(0);
+  const cfg=getCfg();
+  document.getElementById('modalScore').innerHTML=`
+    <div class="modal-big-score" style="color:${col}">${r.score.toFixed(1)}</div>
+    <div style="font-size:11px;color:var(--m);margin:4px 0 10px">/100 điểm KPI tổng hợp</div>
+    <div style="max-width:320px;margin:0 auto">
+      <div class="sbar" style="height:10px;border-radius:5px">
+        <div class="sbar-f" style="width:${bw}%;background:${col};height:100%;border-radius:5px"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:center;margin-top:10px;flex-wrap:wrap">
+      <span class="bg">✅ ${r.done_tasks||0} xong</span>
+      <span class="bb">🔵 ${r.inprogress_tasks||0} đang làm</span>
+      ${(r.overdue_tasks||0)>0?`<span class="br">🔴 ${r.overdue_tasks} quá hạn</span>`:'<span style="color:var(--green);font-size:12px">✓ Không quá hạn</span>'}
+      <span style="font-size:12px;color:var(--m)">Tổng: ${r.total_tasks||0} task</span>
+    </div>`;
+  let mh;
+  if(r.kq_breakdown&&Object.keys(r.kq_breakdown).length){
+    // ── Hiển thị theo định mức KPI (Quota-based) ──────────────────────────
+    const KQ_META={
+      task:     {icon:'📦',name:'Sản lượng task',      color:'#3b82f6'},
+      overdue:  {icon:'⏰',name:'Quá hạn',             color:'#f97316'},
+      hard:     {icon:'⚙️',name:'Task khó',            color:'#8b5cf6'},
+      quality:  {icon:'✅',name:'Chất lượng review',   color:'#34d399'},
+      attendance:{icon:'📅',name:'Điểm danh',          color:'#f59e0b'},
+      unexcused:{icon:'🚫',name:'Vắng không phép',     color:'#ef4444'},
+      delegation:{icon:'🤝',name:'Giao việc (leader)', color:'#60a5fa'},
+    };
+    mh='<div style="font-size:11px;font-weight:600;color:var(--m);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Chi tiết định mức KPI</div>';
+    KQ_METRICS.filter(m=>(m.def.weight||0)>0).forEach(m=>{
+      const val=r.kq_breakdown[m.id]??null;
+      if(val===null)return;
+      const meta=KQ_META[m.id]||{icon:'',name:m.id,color:'#60a5fa'};
+      const vc=scColor(val),barW=Math.min(val,100);
+      mh+=`<div class="mm-row">
+        <div class="mm-label">${meta.icon} ${meta.name} (${m.def.weight}%)</div>
+        <div class="mm-bar"><div class="mm-fill" style="width:${barW}%;background:${meta.color}"></div></div>
+        <div class="mm-val" style="color:${vc}">${val}</div>
+      </div>`;
+    });
+  }else{
+    // ── Fallback: hiển thị M1-M5 cũ ───────────────────────────────────────
+    const mdata=[
+      {label:`M1 Đúng hạn (${cfg.w1}%)`,           val:r.m1,color:'#3b82f6'},
+      {label:`M2 Khối lượng (${cfg.w2}%)`,          val:r.m2,color:'#f97316'},
+      {label:`M3 Việc ưu tiên (${cfg.w3}%)`,        val:r.m3,color:'#f59e0b'},
+      {label:`M4 Độ khó (${cfg.w4}%)`,              val:r.m4,color:'#8b5cf6'},
+      {label:`M5 Chất lượng & Cam kết (${cfg.w5}%)`,val:r.m5,color:'#34d399'},
+    ];
+    mh='<div style="font-size:11px;font-weight:600;color:var(--m);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">Chi tiết 5 chỉ tiêu</div>';
+    mdata.forEach(m=>{
+      const vc=scColor(m.val),barW=Math.min(m.val,100);
+      mh+=`<div class="mm-row">
+        <div class="mm-label">${m.label}</div>
+        <div class="mm-bar"><div class="mm-fill" style="width:${barW}%;background:${m.color}"></div></div>
+        <div class="mm-val" style="color:${vc}">${typeof m.val==='number'?m.val.toFixed(1):m.val}</div>
+      </div>`;
+    });
+  }
+  document.getElementById('modalMetrics').innerHTML=mh;
+
+  // Task list with M1 timeliness score per task
+  const tasks=r.tasks||[];
+  const m1c=getM1C();
+  let th='<div class="modal-task-title">📋 Danh sách task ('+tasks.length+') — Điểm đúng hạn M1</div>';
+  if(!tasks.length){th+='<div style="color:var(--m);font-size:12px">Không có task</div>';}
+  else{
+    const icons={done:'✅',overdue:'🔴',inprogress:'🔵'};
+    const statusC={done:'var(--green)',overdue:'var(--red)',inprogress:'var(--blue)'};
+    const statusL={done:'Hoàn thành',overdue:'Quá hạn',inprogress:'Đang làm'};
+    tasks.forEach(t=>{
+      const tl=taskTimeliness(t,m1c);
+      const tlCol=tl===null?'var(--m)':scColor(tl);
+      const tlLabel=tl===null?'—':tl.toFixed(0)+'đ';
+      const dl=fmtDl(t.deadline),df=diffLabel(t.difficulty);
+      th+=`<div class="mt-item">
+        <span style="font-size:14px;flex-shrink:0">${icons[t.status]||'🔵'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;line-height:1.4">${t.name}</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:2px">
+            <span style="font-size:11px;color:${statusC[t.status]||'var(--blue)'}">${statusL[t.status]||t.status}</span>
+            ${dl?`<span style="font-size:11px;color:var(--m)">📅 ${dl}</span>`:''}
+            <span style="font-size:10px;padding:1px 5px;border-radius:4px;background:rgba(255,255,255,.05);color:${df.c}">${df.l}</span>
+            ${t.urgent?'<span style="font-size:10px;color:var(--red)">🚨</span>':''}
+            ${t.important?'<span style="font-size:10px;color:var(--yellow)">⭐</span>':''}
+          </div>
+        </div>
+        <div class="mt-score" style="color:${tlCol}" title="Điểm M1 cho task này">${tlLabel}</div>
+      </div>`;
+    });
+  }
+  document.getElementById('modalTasks').innerHTML=th;
+  document.getElementById('memberModal').classList.add('open');
+  document.body.style.overflow='hidden';
+}
+function closeModal(e){
+  if(e&&e.target!==document.getElementById('memberModal'))return;
+  document.getElementById('memberModal').classList.remove('open');
+  document.body.style.overflow='';
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
+
+// ── TAB 2: REPORT ─────────────────────────────────────────────────────────
+function setRptPeriod(type,el){
+  rptPeriodType=type;
+  document.querySelectorAll('.pb').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('rptCustom').style.display=type==='custom'?'flex':'none';
+  updateRptLabel();
+}
+function updateRptLabel(){
+  const el=document.getElementById('rptLabel');
+  if(rptPeriodType==='custom'){el.textContent='';return;}
+  const key=periodKey(rptPeriodType),r=periodRange(rptPeriodType,key);
+  el.textContent=periodLabel(rptPeriodType,key)+' ('+fmtDate(r.from)+' → '+fmtDate(r.to)+')';
+}
+function getReportRange(){
+  if(rptPeriodType==='custom')return{from:document.getElementById('rptFrom').value,to:document.getElementById('rptTo').value};
+  return periodRange(rptPeriodType,periodKey(rptPeriodType));
+}
+function renderReport(){
+  if(!projData?.results){
+    document.getElementById('rptContent').innerHTML='<div class="card" style="text-align:center;color:var(--m)">Nhấn 🔄 Làm mới trước</div>';return;
+  }
+  const isCustom=rptPeriodType==='custom';
+  const type=isCustom?'week':rptPeriodType;
+
+  // ── Tính 3 kỳ: trước / hiện tại / sau ─────────────────────────────────
+  let currFrom,currTo,prevFrom,prevTo,nextFrom,nextTo;
+  let prevLabel,currLabel,nextLabel;
+  const periodNames={week:['Tuần trước','Tuần này','Tuần sau'],month:['Tháng trước','Tháng này','Tháng sau'],quarter:['Quý trước','Quý này','Quý sau'],year:['Năm trước','Năm này','Năm sau']};
+  if(isCustom){
+    currFrom=document.getElementById('rptFrom').value;
+    currTo=document.getElementById('rptTo').value;
+    if(!currFrom||!currTo){toast('Chọn khoảng thời gian!',true);return;}
+    const durMs=new Date(currTo).getTime()-new Date(currFrom).getTime()+86400000;
+    const pEnd=new Date(new Date(currFrom).getTime()-86400000);
+    const pStart=new Date(pEnd.getTime()-durMs+86400000);
+    const nStart=new Date(new Date(currTo).getTime()+86400000);
+    const nEnd=new Date(nStart.getTime()+durMs-86400000);
+    prevFrom=pStart.toISOString().slice(0,10);prevTo=pEnd.toISOString().slice(0,10);
+    nextFrom=nStart.toISOString().slice(0,10);nextTo=nEnd.toISOString().slice(0,10);
+    prevLabel='Kỳ trước';currLabel='Kỳ này';nextLabel='Kỳ sau';
+  } else {
+    const currKey=periodKey(type);
+    const prevKey=adjacentPeriod(type,currKey,-1);
+    const nextKey=adjacentPeriod(type,currKey,+1);
+    const cr=periodRange(type,currKey),pr=periodRange(type,prevKey),nr=periodRange(type,nextKey);
+    currFrom=cr.from;currTo=cr.to;prevFrom=pr.from;prevTo=pr.to;nextFrom=nr.from;nextTo=nr.to;
+    [prevLabel,currLabel,nextLabel]=periodNames[type]||['Kỳ trước','Kỳ này','Kỳ sau'];
+  }
+  const ts=(d,eod)=>new Date(d+(eod?'T23:59:59':'')).getTime()/1000;
+  const prevF=ts(prevFrom),prevT=ts(prevTo,true);
+  const currF=ts(currFrom),currT=ts(currTo,true);
+  const nextF=ts(nextFrom),nextT=ts(nextTo,true);
+
+  // ── Lọc thành viên ────────────────────────────────────────────────────
+  const members=getMembers();
+  let res=(projData.results||[]).filter(r=>!members.length||members.includes(r.username));
+  if(!window._isAdmin&&window._myUsername) res=res.filter(r=>r.username===window._myUsername);
+
+  let html='',totDone=0,totActive=0,totNext=0,totNoDl=0;
+  res.forEach(r=>{
+    const allTasks=r.tasks||[];
+    const done=[],active=[],next=[],noDl=[];
+    allTasks.forEach(t=>{
+      if(!t.deadline){noDl.push(t);return;}
+      // Lọc cứng theo deadline: task thuộc kỳ nào thì hiện ở kỳ đó
+      if(t.deadline>=currF&&t.deadline<=currT){
+        if(t.status==='done') done.push(t);
+        else active.push(t);
+      } else if(t.deadline>=nextF&&t.deadline<=nextT){
+        next.push(t);
+      }
+      // Task deadline ngoài kỳ này và kỳ sau → không hiện (sẽ hiện khi xem đúng kỳ)
+    });
+    totDone+=done.length;totActive+=active.length;totNext+=next.length;totNoDl+=noDl.length;
+    const hasData=done.length||active.length||next.length||noDl.length;
+
+    // ── Header thành viên ──
+    html+=`<div class="rpt-member">
+      <div class="rpt-hd">
+        <strong style="font-size:13px">${getDisplayName(r.username,r.full_name||r.username)}</strong>
+        <span style="font-size:11px;color:var(--m)">${r.username}</span>
+        <span class="bg" style="margin-left:auto">✅ ${done.length} hoàn thành</span>
+        <span class="bb">🔵 ${active.length} đang làm</span>
+        <span style="background:rgba(167,139,250,.15);color:#a78bfa;border:1px solid rgba(167,139,250,.3);padding:1px 6px;border-radius:10px;font-size:11px">📌 ${next.length} kỳ sau</span>
+      </div>
+      <div class="rpt-body">
+        ${!hasData?'<div style="color:var(--m);font-size:12px">Không có task nào</div>':''}`;
+
+    // ── Helper render ──
+    const subMap={};
+    allTasks.forEach(t=>{if(t.parent_id){if(!subMap[t.parent_id])subMap[t.parent_id]=[];subMap[t.parent_id].push(t);}});
+    const taskIcon=t=>t.status==='done'?'✅':t.status==='overdue'?'🔴':'🔵';
+    const taskColor=t=>t.status==='done'?'var(--green)':t.status==='overdue'?'var(--red)':'var(--blue)';
+    const mkTask=(t,indent)=>{
+      const subs=subMap[t.id]||[];
+      const ind=indent?'<span style="display:inline-block;width:16px;flex-shrink:0;color:var(--m)">↳</span>':'';
+      const ic=taskIcon(t),cc=taskColor(t);
+      const _dl=t.deadline>0?new Date(t.deadline*1000).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):null;
+      const _cr=t.created>0?new Date(t.created*1000).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):null;
+      const dlHtml=`<span style="font-size:10px;white-space:nowrap;flex-shrink:0;display:flex;gap:6px;align-items:center">
+        ${_cr?`<span style="color:var(--m)">🗓 ${_cr}</span>`:''}
+        ${_cr&&_dl?'<span style="color:var(--m);opacity:.4">→</span>':''}
+        ${_dl?`<span style="color:var(--blue);font-weight:600">📅 ${_dl}</span>`:'<span style="color:var(--m)">— chưa có hạn</span>'}
+      </span>`;
+      let h=`<div class="rpt-task" style="${indent?'padding-left:20px;opacity:.9':''}">
+        ${ind}<span style="color:${cc};flex-shrink:0;font-size:11px">${ic}</span>
+        <span style="flex:1;font-size:${indent?'11':'12'}px">${t.name}</span>${dlHtml}</div>`;
+      subs.forEach(s=>{h+=mkTask(s,true);});
+      return h;
+    };
+    const mkSection=(title,list,borderColor)=>{
+      if(!list.length)return'';
+      const listIds=new Set(list.map(t=>t.id));
+      // Top-level: task không có cha, HOẶC task có cha nhưng cha không trong cùng section
+      const tops=list.filter(t=>!t.parent_id||!listIds.has(t.parent_id));
+      if(!tops.length)return'';
+      const subCount=list.length-tops.length;
+      return`<div class="rpt-section" style="border-left:3px solid ${borderColor};padding-left:10px;margin-bottom:10px">
+        <div class="rpt-section-title" style="color:${borderColor}">${title} (${tops.length}${subCount>0?' · '+subCount+' subtask':''})</div>`
+        +tops.map(t=>mkTask(t,false)).join('')
+        +'</div>';
+    };
+    const cRange=`${fmtDate(currFrom)}–${fmtDate(currTo)}`;
+    const nRange=`${fmtDate(nextFrom)}–${fmtDate(nextTo)}`;
+    html+=mkSection(`Đã hoàn thành (${cRange})`,done,'var(--green)');
+    html+=mkSection(`Đang thực hiện (${cRange})`,active,'var(--blue)');
+    html+=mkSection(`${nextLabel} — kế hoạch (${nRange})`,next,'var(--purple)');
+    html+=mkSection('Chưa có hạn',noDl,'var(--m)');
+    html+='</div></div>';
+  });
+
+  const currKey2=!isCustom?periodKey(type):'';
+  const title=currKey2?periodLabel(type,currKey2):(fmtDate(currFrom)+' → '+fmtDate(currTo));
+  document.getElementById('printTitle').textContent='📋 Báo cáo KPI Phòng R&D — '+title;
+  document.getElementById('rptContent').innerHTML=`
+    <div class="card" style="margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px">📊 Tổng kết: ${title}</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <span class="bg">✅ ${totDone} hoàn thành</span>
+        <span class="bb">🔵 ${totActive} đang làm</span>
+        <span style="background:rgba(167,139,250,.15);color:#a78bfa;border:1px solid rgba(167,139,250,.3);padding:1px 8px;border-radius:10px;font-size:12px">📌 ${totNext} kế hoạch ${nextLabel.toLowerCase()}</span>
+        ${totNoDl?`<span style="color:var(--m);font-size:12px">⚪ ${totNoDl} chưa có hạn</span>`:''}
+      </div>
+    </div>`+html;
+  document.getElementById('printBtn').style.display='inline-flex';
+  if(projData?.results) saveReportSnapshot(currFrom,currTo,res);
+}
+
+// ── TAB: LỊCH CÔNG VIỆC (BOARD) ──────────────────────────────────────────
+let boardPeriodType='week';
+let boardPeriodKey='';
+
+function setBoardPeriod(type,el){
+  boardPeriodType=type;
+  boardPeriodKey=periodKey(type);
+  document.querySelectorAll('#pane-board .pb').forEach(b=>b.classList.remove('active'));
+  if(el) el.classList.add('active');
+  updateBoardLabel();
+  renderBoard();
+}
+
+function boardShift(offset){
+  if(!boardPeriodKey) boardPeriodKey=periodKey(boardPeriodType);
+  boardPeriodKey=adjacentPeriod(boardPeriodType,boardPeriodKey,offset);
+  updateBoardLabel();
+  renderBoard();
+}
+
+function updateBoardLabel(){
+  if(!boardPeriodKey) boardPeriodKey=periodKey(boardPeriodType);
+  const lbl=document.getElementById('boardLabel');
+  if(lbl) lbl.textContent=periodLabel(boardPeriodType,boardPeriodKey);
+}
+
+function renderBoard(){
+  const wrap=document.getElementById('boardContent');
+  const summary=document.getElementById('boardSummary');
+  if(!projData?.results){
+    wrap.innerHTML='<div class="card" style="text-align:center;color:var(--m);padding:32px">Nhấn 🔄 Làm mới để tải dữ liệu trước</div>';
+    return;
+  }
+  if(!boardPeriodKey) boardPeriodKey=periodKey(boardPeriodType);
+  updateBoardLabel();
+
+  const {from,to}=periodRange(boardPeriodType,boardPeriodKey);
+  const ts=(d,eod)=>new Date(d+(eod?'T23:59:59':'')).getTime()/1000;
+  const F=ts(from),T=ts(to,true);
+
+  const members=getMembers();
+  let res=(projData.results||[]).filter(r=>!members.length||members.includes(r.username));
+  if(!window._isAdmin&&window._myUsername) res=res.filter(r=>r.username===window._myUsername);
+
+  let gOverdue=0,gActive=0,gNoDl=0;
+  const nowTs=Date.now()/1000;
+
+  const colHtml=res.map(r=>{
+    const allTasks=r.tasks||[];
+    // Hiện task chưa xong có deadline ≤ cuối kỳ (hoặc không có deadline)
+    // Ẩn task có deadline sau kỳ đang xem (chưa đến lượt)
+    const overdue=[],active=[],noDl=[];
+    allTasks.forEach(t=>{
+      if(t.status==='done') return; // Bỏ qua task đã hoàn thành
+      if(!t.deadline){noDl.push(t);return;}
+      if(t.deadline>T) return; // Deadline sau kỳ → ẩn (việc tương lai)
+      // Deadline trong kỳ hoặc từ kỳ trước chưa xong → phân loại
+      if(t.status==='overdue'||t.deadline<nowTs) overdue.push(t);
+      else active.push(t);
+    });
+    gOverdue+=overdue.length; gActive+=active.length; gNoDl+=noDl.length;
+    const total=overdue.length+active.length+noDl.length;
+
+    const mkCard=(t,isOverdue)=>{
+      const borderColor=isOverdue?'var(--red)':'var(--blue)';
+      const dl=t.deadline>0?new Date(t.deadline*1000).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):'';
+      const daysOver=isOverdue&&t.deadline>0?Math.floor((nowTs-t.deadline)/86400):0;
+      const subs=allTasks.filter(s=>s.parent_id===t.id&&s.status!=='done');
+      const subHtml=subs.map(s=>{
+        const sOver=s.status==='overdue'||(s.deadline>0&&s.deadline<nowTs);
+        return`<div class="board-sub">
+          <span style="flex-shrink:0;font-size:10px;margin-top:1px">${sOver?'🔴':'🔵'}</span>
+          <span class="board-sub-name">${s.name}</span>
+        </div>`;
+      }).join('');
+      return`<div class="board-task" style="border-left:4px solid ${borderColor}${isOverdue?';background:rgba(248,113,113,.05)':''}">
+        <div class="board-task-name" style="${isOverdue?'color:var(--red)':''}">${t.name}</div>
+        <div class="board-task-meta">
+          ${dl?`<span class="board-task-dl">📅 ${dl}</span>`:''}
+          ${daysOver>0?`<span class="board-task-warn">⚠️ Trễ ${daysOver} ngày</span>`:''}
+        </div>
+        ${subHtml}
+      </div>`;
+    };
+
+    const secOverdue=overdue.length
+      ?`<div class="board-sec-title sec-overdue">🔴 Quá hạn — ${overdue.length} việc</div>`+overdue.map(t=>mkCard(t,true)).join(''):'';
+    const secActive=active.length
+      ?`<div class="board-sec-title sec-active">🔵 Đang thực hiện — ${active.length} việc</div>`+active.map(t=>mkCard(t,false)).join(''):'';
+    const secNoDl=noDl.length
+      ?`<div class="board-sec-title sec-nodl">⚪ Chưa có hạn — ${noDl.length} việc</div>`+noDl.map(t=>mkCard(t,false)).join(''):'';
+
+    const hasOverdue=overdue.length>0;
+    const displayName=getDisplayName(r.username,r.full_name||r.username);
+    return`<div class="board-col" style="${hasOverdue?'border-color:rgba(248,113,113,.5)':''}">
+      <div class="board-col-hd" style="${hasOverdue?'border-bottom-color:rgba(248,113,113,.3)':''}">
+        <div class="board-col-name">${displayName}</div>
+        <div class="board-col-meta">${r.username}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          ${overdue.length?`<span class="board-badge board-badge-red">🔴 ${overdue.length} quá hạn</span>`:''}
+          ${active.length?`<span class="board-badge board-badge-blue">🔵 ${active.length} đang làm</span>`:''}
+          ${noDl.length?`<span class="board-badge board-badge-grey">⚪ ${noDl.length} chưa hạn</span>`:''}
+          ${!total?`<span style="font-size:12px;color:var(--green);font-weight:600">✅ Không có việc tồn đọng</span>`:''}
+        </div>
+      </div>
+      <div class="board-col-body">
+        ${!total?'<div class="board-empty">✅ Không có việc nào<br>trong kỳ này</div>':''}
+        ${secOverdue}${secActive}${secNoDl}
+      </div>
+    </div>`;
+  }).join('');
+
+  wrap.innerHTML=`<div class="board-wrap">${colHtml}</div>`;
+  if(summary){
+    summary.innerHTML=
+      (gOverdue?`<span class="board-badge board-badge-red" style="margin-right:8px">🔴 ${gOverdue} quá hạn</span>`:'')
+      +(gActive?`<span class="board-badge board-badge-blue" style="margin-right:8px">🔵 ${gActive} đang thực hiện</span>`:'')
+      +(gNoDl?`<span class="board-badge board-badge-grey">⚪ ${gNoDl} chưa có hạn</span>`:'')
+      +(!gOverdue&&!gActive&&!gNoDl?`<span style="color:var(--green);font-size:13px;font-weight:600">✅ Không có việc tồn đọng trong kỳ này</span>`:'');
+  }
+}
+
+// ── TAB 3: HISTORY ────────────────────────────────────────────────────────
+async function doSaveSnapshot(type,source){
+  const key=periodKey(type),{from,to}=periodRange(type,key);
+  const cfg=getCfg(),members=getMembers();
+  const res=(projData.results||[]).filter(r=>!members.length||members.includes(r.username));
+  const snapshots=res.map(r=>{
+    // Ưu tiên kq_score (quota-based); fallback M1-M5
+    const sc=(r.kq_score!=null)?{score:r.kq_score,m1:0,m2:0,m3:0,m4:0,m5:0}:calcScore(r);
+    // Guard: bỏ qua member có score không hợp lệ (NaN/undefined)
+    if(!isFinite(sc.score)||sc.score===undefined||sc.score===null) return null;
+    return{username:r.username,full_name:r.full_name||r.username,
+      period_type:type,period_key:key,period_from:from,period_to:to,
+      score:sc.score,m1:sc.m1,m2:sc.m2,m3:sc.m3,m4:sc.m4,m5:sc.m5,
+      w1:cfg.w1,w2:cfg.w2,w3:cfg.w3,w4:cfg.w4,w5:cfg.w5,
+      total_tasks:r.total_tasks||0,done_tasks:r.done_tasks||0,
+      ontime_tasks:r.ontime_tasks||0,overdue_tasks:r.overdue_tasks||0,
+      source:source||'manual_save'};
+  }).filter(Boolean);
+  if(!snapshots.length)return{success:true,saved:0};
+  const resp=await fetch(WK+'/api/rd/snapshot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({snapshots})});
+  if(!resp.ok)throw new Error('HTTP '+resp.status);
+  return resp.json();
+}
+async function autoSaveAll(){
+  if(!projData?.results)return;
+  const now=new Date(), today=now.toISOString().slice(0,10);
+  let saved;
+  try{saved=JSON.parse(localStorage.getItem(K.autosave)||'{}');}catch(e){saved={};}
+  // Tính các kỳ cần lưu hôm nay
+  const toSave=[];
+  const dow=now.getDay(); // 0=CN,1=T2...
+  const dom=now.getDate();
+  const mon=now.getMonth()+1;
+  // Tuần hiện tại — lưu mỗi ngày (upsert = an toàn)
+  if(saved.week!==today) toSave.push('week');
+  // Tháng — lưu vào ngày 1 của tháng mới (tháng trước vừa kết thúc)
+  if(dom===1 && saved.month!==today) toSave.push('month');
+  // Quý — lưu vào ngày 1/1, 1/4, 1/7, 1/10
+  if(dom===1 && [1,4,7,10].includes(mon) && saved.quarter!==today) toSave.push('quarter');
+  // Năm — lưu vào 1/1
+  if(dom===1 && mon===1 && saved.year!==today) toSave.push('year');
+  if(!toSave.length)return;
+  const status=document.getElementById('autoSaveStatus');
+  status.innerHTML='<span class="autosave-dot"></span>Đang lưu KPI...';
+  try{
+    for(const type of toSave) await doSaveSnapshot(type,'auto_milestone');
+    if(toSave.includes('week'))    saved.week=today;
+    if(toSave.includes('month'))   saved.month=today;
+    if(toSave.includes('quarter')) saved.quarter=today;
+    if(toSave.includes('year'))    saved.year=today;
+    localStorage.setItem(K.autosave,JSON.stringify(saved));
+    status.textContent='✓ KPI đã lưu tự động';
+    setTimeout(()=>status.textContent='',5000);
+  }catch(e){status.textContent='';console.log('Auto-save:',e.message);}
+}
+async function saveSnapshotManual(){
+  if(!projData?.results){toast('Tải dữ liệu trước!',true);return;}
+  const type=document.getElementById('snapType').value;
+  try{await doSaveSnapshot(type,'manual_save');toast('✓ Đã lưu snapshot '+periodLabel(type,periodKey(type)),false);loadHistory();}
+  catch(e){toast('Lỗi lưu: '+e.message,true);}
+}
+async function loadHistory(){
+  const type=document.getElementById('histType').value,year=document.getElementById('histYear').value;
+  document.getElementById('histContent').innerHTML='<div style="text-align:center;padding:20px;color:var(--m)"><span class="spin"></span> Đang tải...</div>';
+  try{
+    let url='/api/rd/snapshots?period_type='+type+'&year='+year;
+    // Member chỉ tải lịch sử của chính mình
+    if(!window._isAdmin&&window._myUsername){url+='&username='+encodeURIComponent(window._myUsername);}
+    const data=await api(url);renderHistory(data,type,year);
+  }
+  catch(e){document.getElementById('histContent').innerHTML='<div style="padding:20px;text-align:center;color:var(--red)">Lỗi: '+e.message+'</div>';}
+}
+function renderHistory(data,type,year){
+  const snaps=data.snapshots||[];
+  if(!snaps.length){
+    document.getElementById('histContent').innerHTML='<div class="card" style="text-align:center;color:var(--m);padding:24px">Chưa có dữ liệu.<br><span style="font-size:12px">KPI tự động lưu mỗi ngày khi mở app.</span></div>';return;
+  }
+  const periods=[...new Set(snaps.map(s=>s.period_key))].sort();
+  const users=[...new Set(snaps.map(s=>s.username))];
+  const lu={};snaps.forEach(s=>{if(!lu[s.period_key])lu[s.period_key]={};lu[s.period_key][s.username]=s;});
+  const avgScores=periods.map(p=>{const ps=Object.values(lu[p]||{});return ps.length?+(ps.reduce((s,r)=>s+(r.score||0),0)/ps.length).toFixed(1):null;});
+  let h=`<div class="card"><div class="ctitle">📈 Xu hướng điểm trung bình nhóm</div>
+    <div class="chart-wrap"><canvas id="histChart"></canvas></div></div>
+  <div class="card"><div class="ctitle">📊 Chi tiết — ${type==='week'?'Tuần':type==='month'?'Tháng':type==='quarter'?'Quý':'Năm'} ${year}</div>
+  <div class="tw"><table class="hist-table"><thead><tr><th>Kỳ</th>`;
+  users.forEach(u=>{const name=snaps.find(s=>s.username===u)?.full_name||u;h+=`<th style="text-align:center">${name}</th>`;});
+  h+='</tr></thead><tbody>';
+  periods.forEach(p=>{
+    h+=`<tr><td>${periodLabel(type,p)}</td>`;
+    users.forEach(u=>{
+      const s=lu[p]?.[u];
+      if(!s){h+=`<td><span class="hs-n">—</span></td>`;return;}
+      h+=`<td><span class="hs ${scClass(s.score)}">${s.score.toFixed(1)}</span>
+          <div style="font-size:10px;color:var(--m);margin-top:2px" title="M1:${s.m1} M2:${s.m2} M3:${s.m3} M4:${s.m4} M5:${s.m5}${s.m6!==undefined?' M6:'+s.m6:''}">M1:<b>${s.m1}</b> M2:<b>${s.m2}</b> M3:<b>${s.m3}</b></div></td>`;
+    });
+    h+='</tr>';
+  });
+  h+='</tbody></table></div></div>';
+  document.getElementById('histContent').innerHTML=h;
+  if(histChart){histChart.destroy();histChart=null;}
+  const ctx=document.getElementById('histChart').getContext('2d');
+  histChart=new Chart(ctx,{type:'line',data:{labels:periods.map(p=>p.replace(/^\d{4}-/,'')),
+    datasets:[{label:'Điểm TB nhóm',data:avgScores,borderColor:'#60a5fa',backgroundColor:'rgba(96,165,250,.1)',tension:.3,fill:true,pointRadius:4,pointBackgroundColor:'#60a5fa'},
+      ...users.map((u,i)=>{const colors=['#34d399','#fbbf24','#f87171','#a78bfa','#fb923c'];const name=snaps.find(s=>s.username===u)?.full_name||u;
+        return{label:name,data:periods.map(p=>lu[p]?.[u]?.score||null),borderColor:colors[i%colors.length],backgroundColor:'transparent',tension:.3,pointRadius:3,borderDash:[4,4]};
+      })]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#94a3b8',font:{size:11}}}},
+      scales:{x:{ticks:{color:'#94a3b8'},grid:{color:'#1e293b'}},y:{ticks:{color:'#94a3b8'},grid:{color:'#1e293b'},min:0,max:100}}}});
+}
+
+// ── TAB 4: CONFIG ─────────────────────────────────────────────────────────
+function renderConfig(){
+  // Load saved sheet URL
+  const su=document.getElementById('sheetsUrlInp');
+  if(su) su.value=localStorage.getItem('rd_sheets_url')||'';
+  const cfg=getCfg(),m1c=getM1C(),m2c=getM2C();
+  document.getElementById('membersInp').value=getMembers().join(',');
+  loadAttConfigUI();loadQuotaList();
+  if(authState?.profile?.role==='admin'){loadBaseApiConfig();loadBaseworkWorkspaces();}
+  renderKqMetricRows();
+  loadKpiQuotaConfig();
+  let h='';
+  METRICS.forEach(m=>{
+    const w=cfg[m.key]||0;
+    const deepBtn=m.hasDeep?`<button class="btn-cfg" id="btn-${m.deepId}" onclick="toggleDeep('${m.deepId}','btn-${m.deepId}')">⚙️ Chi tiết</button>`:'';
+    h+=`<div class="mrow2">
+      <div class="mdot" style="background:${m.color};margin-top:5px"></div>
+      <div class="minfo">
+        <div class="mname">${m.name}<span class="tag-a">Tự động</span></div>
+        <div class="mdesc">${m.desc}</div>
+        <div class="mtrack"><div class="mfill" style="width:${w}%;background:${m.color}" id="mb-${m.key}"></div></div>
+        ${m.hasDeep?`<div id="${m.deepId}" class="dcfg"></div>`:''}
+      </div>
+      <div style="display:flex;align-items:center;gap:5px;flex-shrink:0">
+        <input type="number" class="inp" id="wi-${m.key}" value="${w}" min="0" max="100"
+               style="width:52px;text-align:center" onchange="onWC()">
+        <span style="color:var(--m);font-size:12px">%</span>
+        ${deepBtn}
+      </div>
+    </div>`;
+  });
+  document.getElementById('metricRows').innerHTML=h;
+
+  // Populate M1 deep panel
+  document.getElementById('m1CfgPanel').innerHTML=`
+    <div class="dcfg-title">⚙️ Cấu hình chi tiết M1 — Hoàn thành đúng hạn</div>
+    <div class="dcfg-grid">
+      <div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">🏆 Hoàn thành sớm hơn</div>
+          <input class="dcfg-inp" id="m1_earlyDays" type="number" min="0" max="14" value="${m1c.earlyDays}" onchange="updateM1Example()">
+          <div class="dcfg-unit">ngày → +<input class="dcfg-inp" id="m1_earlyBonus" type="number" min="0" max="50" value="${m1c.earlyBonus}" onchange="updateM1Example()" style="width:44px"> điểm</div>
+        </div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">✅ Hoàn thành đúng hạn</div>
+          <div style="font-size:12px;font-weight:700;color:var(--green)">100 điểm</div>
+        </div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">⏰ Trễ 1–3 ngày</div>
+          <div class="dcfg-unit">−</div>
+          <input class="dcfg-inp" id="m1_late1" type="number" min="0" max="50" value="${m1c.late1}" onchange="updateM1Example()">
+          <div class="dcfg-unit">điểm/ngày</div>
+        </div>
+      </div>
+      <div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">⚠️ Trễ 4–7 ngày</div>
+          <div class="dcfg-unit">−</div>
+          <input class="dcfg-inp" id="m1_late2" type="number" min="0" max="100" value="${m1c.late2}" onchange="updateM1Example()">
+          <div class="dcfg-unit">điểm tổng</div>
+        </div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">🔴 Trễ trên 7 ngày</div>
+          <div class="dcfg-unit">−</div>
+          <input class="dcfg-inp" id="m1_late3" type="number" min="0" max="100" value="${m1c.late3}" onchange="updateM1Example()">
+          <div class="dcfg-unit">điểm tổng</div>
+        </div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">❌ Quá hạn chưa xong</div>
+          <input class="dcfg-inp" id="m1_overdueScore" type="number" min="0" max="60" value="${m1c.overdueScore}" onchange="updateM1Example()">
+          <div class="dcfg-unit">điểm</div>
+        </div>
+      </div>
+    </div>
+    <div class="example-box" id="m1Example"></div>`;
+  updateM1Example();
+
+  // Populate M2 deep panel
+  const modeChecked_d=m2c.diffWeight?'checked':'';
+  const modeChecked_t=!m2c.diffWeight?'checked':'';
+  document.getElementById('m2CfgPanel').innerHTML=`
+    <div class="dcfg-title">⚙️ Cấu hình chi tiết M2 — Khối lượng công việc</div>
+    <div class="dcfg-grid">
+      <div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">🎯 Mục tiêu task/tháng (M2)</div>
+          <input class="dcfg-inp" id="m2_target" type="number" min="1" max="100" value="${m2c.target}" onchange="updateM2Example()">
+          <div class="dcfg-unit">task</div>
+        </div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">🚀 Vượt M2: thưởng</div>
+          <div class="dcfg-unit">+</div>
+          <input class="dcfg-inp" id="m2_overBonus" type="number" min="0" max="20" value="${m2c.overBonus}" onchange="updateM2Example()">
+          <div class="dcfg-unit">điểm/task thêm</div>
+        </div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">📊 Điểm tối đa M2</div>
+          <input class="dcfg-inp" id="m2_overMax" type="number" min="100" max="150" value="${m2c.overMax}" onchange="updateM2Example()">
+          <div class="dcfg-unit">điểm</div>
+        </div>
+        <div style="height:1px;background:var(--b);margin:6px 0"></div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">📅 Định mức task/tuần (M5)</div>
+          <input class="dcfg-inp" id="m2_weeklyQuota" type="number" min="1" max="50" value="${m2c.weeklyQuota||5}" onchange="updateM2Example()">
+          <div class="dcfg-unit">task</div>
+        </div>
+        <div class="dcfg-row">
+          <div class="dcfg-label">🎁 Vượt định mức M5: thưởng</div>
+          <div class="dcfg-unit">+</div>
+          <input class="dcfg-inp" id="m2_m5OverBonus" type="number" min="0" max="20" value="${m2c.m5OverBonus||3}" onchange="updateM2Example()">
+          <div class="dcfg-unit">điểm/task thêm</div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--m);margin-bottom:8px">⚖️ Cách tính khối lượng:</div>
+        <label style="display:flex;align-items:flex-start;gap:7px;cursor:pointer;margin-bottom:8px">
+          <input type="radio" name="m2mode" value="diff" ${modeChecked_d} onchange="updateM2Example()" style="margin-top:2px">
+          <div>
+            <div style="font-size:12px;font-weight:500;color:var(--t)">Tính theo độ khó (công bằng)</div>
+            <div style="font-size:11px;color:var(--m);line-height:1.5">Task khó hơn đóng góp nhiều hơn.<br>Task khó 90đ = 1.38 × task trung bình</div>
+          </div>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:7px;cursor:pointer">
+          <input type="radio" name="m2mode" value="tasks" ${modeChecked_t} onchange="updateM2Example()" style="margin-top:2px">
+          <div>
+            <div style="font-size:12px;font-weight:500;color:var(--t)">Đếm số task thuần</div>
+            <div style="font-size:11px;color:var(--m);line-height:1.5">Mỗi task = 1 đơn vị bất kể độ khó</div>
+          </div>
+        </label>
+      </div>
+    </div>
+    <div class="example-box" id="m2Example"></div>`;
+  updateM2Example();
+  updWT();
+}
+
+function toggleDeep(panelId,btnId){
+  const p=document.getElementById(panelId),b=document.getElementById(btnId);
+  const open=p.classList.toggle('open');
+  b.classList.toggle('open',open);
+  b.textContent=open?'⚙️ Thu gọn':'⚙️ Chi tiết';
+}
+
+function updateM1Example(){
+  const earlyDays=+document.getElementById('m1_earlyDays')?.value||1;
+  const earlyBonus=+document.getElementById('m1_earlyBonus')?.value||10;
+  const late1=+document.getElementById('m1_late1')?.value||10;
+  const late2=+document.getElementById('m1_late2')?.value||40;
+  const late3=+document.getElementById('m1_late3')?.value||60;
+  const overdueScore=+document.getElementById('m1_overdueScore')?.value||20;
+  const ex=document.getElementById('m1Example');
+  if(!ex)return;
+  const sc=(v,base='var(--t)')=>`<b style="color:${scColor(v)}">${v.toFixed(0)}đ</b>`;
+  ex.innerHTML=`📐 <b>Ví dụ điểm theo kịch bản:</b><br>`
+    +`Xong sớm ${earlyDays}+ ngày: ${sc(Math.min(100+earlyBonus,100+earlyBonus))} · `
+    +`Đúng hạn: ${sc(100)} · `
+    +`Trễ 1 ngày: ${sc(Math.max(0,100-late1))} · `
+    +`Trễ 3 ngày: ${sc(Math.max(0,100-late1*3))} · `
+    +`Trễ 5 ngày: ${sc(Math.max(0,100-late2))} · `
+    +`Trễ 10 ngày: ${sc(Math.max(0,100-late3))} · `
+    +`Quá hạn chưa xong: ${sc(overdueScore)}<br>`
+    +`<span style="color:var(--m)">M1 = điểm trung bình cộng của tất cả task có deadline (bỏ qua task đang làm chưa đến hạn)</span>`;
+}
+
+function updateM2Example(){
+  const target=+document.getElementById('m2_target')?.value||5;
+  const overBonus=+document.getElementById('m2_overBonus')?.value||5;
+  const overMax=+document.getElementById('m2_overMax')?.value||120;
+  const quota=+document.getElementById('m2_weeklyQuota')?.value||5;
+  const m5ob=+document.getElementById('m2_m5OverBonus')?.value||3;
+  const diffWeight=(document.querySelector('input[name="m2mode"]:checked')?.value||'diff')==='diff';
+  const ex=document.getElementById('m2Example');
+  if(!ex)return;
+  const calcM2=(done,avgDiff)=>{
+    if(diffWeight){
+      const effDone=done*avgDiff/65;
+      const base=Math.min(100,effDone/target*100);
+      const bonus=Math.max(0,Math.floor(effDone)-target)*overBonus;
+      return Math.min(overMax,base+bonus).toFixed(1);
+    }else{
+      const base=Math.min(100,done/target*100);
+      const bonus=Math.max(0,done-target)*overBonus;
+      return Math.min(overMax,base+bonus).toFixed(1);
+    }
+  };
+  const calcM5=(total,done)=>{
+    if(total<=quota) return Math.round(done/total*100);
+    return Math.min(120,Math.round(Math.min(100,done/quota*100)+Math.max(0,done-quota)*m5ob));
+  };
+  ex.innerHTML=`📐 <b>M2 — Ví dụ (mục tiêu ${target} task/tháng):</b><br>`
+    +`5 task dễ (50đ): <b style="color:${scColor(+calcM2(5,50))}">${calcM2(5,50)}đ</b> · `
+    +`5 task TB (65đ): <b style="color:${scColor(+calcM2(5,65))}">${calcM2(5,65)}đ</b> · `
+    +`5 task khó (90đ): <b style="color:${scColor(+calcM2(5,90))}">${calcM2(5,90)}đ</b> · `
+    +`${target+2} task TB: <b style="color:${scColor(+calcM2(target+2,65))}">${calcM2(target+2,65)}đ</b><br>`
+    +(diffWeight?`<span style="color:var(--m)">Subtask: task có 2 sub = ${(1+Math.min(2*0.3,1.5)).toFixed(1)}× trọng số · task có 5+ sub = 2.5× trọng số</span>`
+               :`<span style="color:var(--m)">Đếm thuần: mỗi task = 1 đơn vị, không phân biệt khó dễ</span>`)
+    +`<br>📐 <b>M5 — Định mức ${quota} task/tuần (nhận nhiều task không bị phạt):</b><br>`
+    +`${quota} task, ${quota} xong: <b style="color:${scColor(calcM5(quota,quota))}">${calcM5(quota,quota)}%</b> · `
+    +`${quota*2} task, ${quota} xong: <b style="color:${scColor(calcM5(quota*2,quota))}">${calcM5(quota*2,quota)}%</b> (vs ${Math.round(quota/quota/2*100)}% cũ) · `
+    +`${quota*2} task, ${quota*2} xong: <b style="color:${scColor(calcM5(quota*2,quota*2))}">${calcM5(quota*2,quota*2)}%</b>`;
+}
+
+function onWC(){
+  METRICS.forEach(m=>{const v=parseInt(document.getElementById('wi-'+m.key)?.value)||0;const b=document.getElementById('mb-'+m.key);if(b)b.style.width=Math.min(v,100)+'%';});
+  updWT();
+}
+function updWT(){
+  const tot=METRICS.reduce((s,m)=>s+(parseInt(document.getElementById('wi-'+m.key)?.value)||0),0);
+  const el=document.getElementById('wtotal');
+  if(tot===100){el.className='wtotal wok';el.innerHTML=`<span>Tổng: 100% ✓ Hợp lệ</span><button class="btn bp" onclick="saveConfig()">💾 Lưu tất cả</button>`;}
+  else{el.className='wtotal werr';el.innerHTML=`<span>Tổng: ${tot}% ✗ Cần đủ 100%</span><button class="btn bp" onclick="saveConfig()" disabled>💾 Lưu</button>`;}
+}
+function saveConfig(){
+  const cfg={};METRICS.forEach(m=>{cfg[m.key]=parseInt(document.getElementById('wi-'+m.key)?.value)||0;});
+  if(Object.values(cfg).reduce((a,b)=>a+b,0)!==100){toast('Tổng phải bằng 100%!',true);return;}
+  // Save weights
+  localStorage.setItem(K.cfg,JSON.stringify(cfg));
+  // Save M1 deep config
+  const m1c={
+    earlyDays:+document.getElementById('m1_earlyDays')?.value||DEF_M1.earlyDays,
+    earlyBonus:+document.getElementById('m1_earlyBonus')?.value||DEF_M1.earlyBonus,
+    late1:+document.getElementById('m1_late1')?.value||DEF_M1.late1,
+    late2:+document.getElementById('m1_late2')?.value||DEF_M1.late2,
+    late3:+document.getElementById('m1_late3')?.value||DEF_M1.late3,
+    overdueScore:+document.getElementById('m1_overdueScore')?.value||DEF_M1.overdueScore,
+  };
+  localStorage.setItem(K.m1,JSON.stringify(m1c));
+  // Save M2 deep config
+  const m2c={
+    target:+document.getElementById('m2_target')?.value||DEF_M2.target,
+    overBonus:+document.getElementById('m2_overBonus')?.value||DEF_M2.overBonus,
+    overMax:+document.getElementById('m2_overMax')?.value||DEF_M2.overMax,
+    diffWeight:(document.querySelector('input[name="m2mode"]:checked')?.value||'diff')==='diff',
+    weeklyQuota:+document.getElementById('m2_weeklyQuota')?.value||DEF_M2.weeklyQuota,
+    m5OverBonus:+document.getElementById('m2_m5OverBonus')?.value||DEF_M2.m5OverBonus,
+  };
+  localStorage.setItem(K.m2,JSON.stringify(m2c));
+  // Sync lên cloud
+  pushCfgCloud('kpi_weights',cfg);
+  pushCfgCloud('kpi_m1',m1c);
+  pushCfgCloud('kpi_m2',m2c);
+  toast('✓ Đã lưu cấu hình KPI',false);
+  if(projData)renderKPI();
+}
+function saveMembers(){
+  const v=document.getElementById('membersInp').value.trim();
+  localStorage.setItem(K.members,v);
+  pushCfgCloud('kpi_members',v);
+  toast('✓ Đã lưu thành viên',false);initApp();
+}
+
+async function discoverProjectMembers(){
+  const el=document.getElementById('memberDiscoverResult');
+  el.style.display='';
+  el.innerHTML='<span class="spin"></span> Đang lấy danh sách từ Base...';
+  try{
+    const d=await api('/api/project-kpi/'+PROJ+'/full');
+    const allMs=(d.results||[]).map(r=>r.username).filter(Boolean);
+    const current=getMembers();
+    if(!allMs.length){el.innerHTML='<span style="color:var(--yellow)">⚠️ Không tìm thấy username nào trong dự án.</span>';return;}
+    const rows=allMs.map(u=>{
+      const inCfg=current.includes(u);
+      const taskCount=(d.results||[]).find(r=>r.username===u)?.total_tasks||0;
+      return `<tr>
+        <td style="font-family:monospace;font-size:12px;padding:3px 8px">${u}</td>
+        <td style="padding:3px 8px;font-size:12px">${(d.results||[]).find(r=>r.username===u)?.full_name||''}</td>
+        <td style="padding:3px 8px;text-align:center;font-size:12px">${taskCount}</td>
+        <td style="padding:3px 8px;text-align:center">
+          ${inCfg
+            ? '<span style="color:var(--green);font-size:11px">✅ Đã có</span>'
+            : `<button class="btn bp" style="padding:2px 8px;font-size:11px" onclick="addMemberToConfig('${u}')">➕ Thêm vào</button>`}
+        </td>
+      </tr>`;
+    }).join('');
+    el.innerHTML=`<div style="font-size:12px;font-weight:600;margin-bottom:6px">Username trong dự án (${allMs.length} người — ${d.total_tasks||0} task tổng):</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:var(--s)">
+          <th style="padding:4px 8px;text-align:left">Username</th>
+          <th style="padding:4px 8px;text-align:left">Tên</th>
+          <th style="padding:4px 8px;text-align:center">Task</th>
+          <th style="padding:4px 8px;text-align:center">Trạng thái</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  }catch(e){el.innerHTML='<span style="color:var(--red)">❌ Lỗi: '+e.message+'</span>';}
+}
+
+function addMemberToConfig(uname){
+  const current=getMembers();
+  if(current.includes(uname)){toast(uname+' đã có trong danh sách',false);return;}
+  const updated=[...current,uname].join(',');
+  document.getElementById('membersInp').value=updated;
+  localStorage.setItem(K.members,updated);
+  pushCfgCloud('kpi_members',updated);
+  toast('✓ Đã thêm '+uname,false);
+  discoverProjectMembers(); // refresh table
+}
+
+
+// ── AUTH ──────────────────────────────────────────────────────────────────
+function switchLoginTab(tab){
+  document.getElementById('loginForm').style.display=tab==='login'?'':'none';
+  document.getElementById('registerForm').style.display=tab==='register'?'':'none';
+  document.getElementById('loginTab').classList.toggle('active',tab==='login');
+  document.getElementById('registerTab').classList.toggle('active',tab==='register');
+}
+async function sbFetch(endpoint,body,token){
+  const headers={'Content-Type':'application/json','apikey':SB_ANON};
+  if(token) headers['Authorization']='Bearer '+token;
+  const res=await fetch(SB_URL+'/auth/v1/'+endpoint,{method:'POST',headers,body:JSON.stringify(body)});
+  return {ok:res.ok,data:await res.json(),status:res.status};
+}
+async function doLogin(){
+  const email=document.getElementById('liEmail').value.trim();
+  const pass=document.getElementById('liPass').value;
+  const btn=document.getElementById('liBtn');
+  const err=document.getElementById('liErr');
+  if(!email||!pass){err.textContent='Nhập đầy đủ email và mật khẩu';return;}
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>';err.textContent='';
+  try{
+    const {ok,data}=await sbFetch('token?grant_type=password',{email,password:pass});
+    if(!ok) throw new Error(data.error_description||data.msg||'Sai email hoặc mật khẩu');
+    const token=data.access_token;
+    // Load profile
+    let profile=null;
+    try{
+      const pRes=await fetch(WK+'/api/rd/user-profile?email='+encodeURIComponent(email));
+      if(pRes.ok) profile=await pRes.json();
+    }catch(e){}
+    authState={access_token:token,user:data.user,profile,email};
+    localStorage.setItem('rd_auth',JSON.stringify(authState));
+    showApp();
+    loadData();
+  }catch(e){err.textContent=e.message;}
+  finally{btn.disabled=false;btn.textContent='Đăng nhập';}
+}
+async function doRegister(){
+  const email=document.getElementById('regEmail').value.trim();
+  const pass=document.getElementById('regPass').value;
+  const name=document.getElementById('regName').value.trim();
+  const uname=document.getElementById('regUser').value.trim();
+  const btn=document.getElementById('regBtn');
+  const err=document.getElementById('regErr');
+  if(!email||!pass){err.textContent='Nhập đầy đủ email và mật khẩu';return;}
+  if(pass.length<6){err.textContent='Mật khẩu tối thiểu 6 ký tự';return;}
+  btn.disabled=true;btn.innerHTML='<span class="spin"></span>';err.textContent='';
+  try{
+    const {ok,data}=await sbFetch('signup',{email,password:pass,data:{full_name:name,username:uname}});
+    if(!ok) throw new Error(data.error_description||data.msg||'Đăng ký thất bại');
+    // Create profile in Worker
+    await fetch(WK+'/api/rd/user-profile',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,username:uname||null,full_name:name||email.split('@')[0],role:'member'})});
+    err.style.color='var(--green)';
+    err.textContent='✓ Đăng ký thành công! Kiểm tra email để xác nhận (hoặc đăng nhập ngay nếu admin đã bật auto-confirm).';
+    setTimeout(()=>switchLoginTab('login'),3000);
+  }catch(e){err.style.color='var(--red)';err.textContent=e.message;}
+  finally{btn.disabled=false;btn.textContent='Đăng ký tài khoản';}
+}
+async function doLogout(){
+  try{await sbFetch('logout',{},authState?.access_token);}catch(e){}
+  localStorage.removeItem('rd_auth');
+  authState=null;
+  showLogin();
+}
+function showLogin(){
+  document.getElementById('loginOverlay').classList.remove('hidden');
+  document.getElementById('logoutBtn').style.display='none';
+  document.getElementById('userDisp').textContent='';
+}
+function showApp(){
+  document.getElementById('loginOverlay').classList.add('hidden');
+  const profile=authState?.profile;
+  const name=profile?.full_name||authState?.email||'';
+  const role=profile?.role||'member';
+  document.getElementById('userDisp').textContent=name?'👤 '+name:'';
+  document.getElementById('logoutBtn').style.display='inline-flex';
+  if(role==='admin') document.getElementById('userMgmtCard').style.display='';
+  // Update name map from profile if available
+  if(profile?.username&&profile?.full_name){
+    const nm=getNameMap();nm[profile.username]=profile.full_name;
+    localStorage.setItem('rd_namemap',JSON.stringify(nm));
+  }
+}
+async function checkAuth(){
+  const saved=localStorage.getItem('rd_auth');
+  if(!saved) return false;
+  try{
+    authState=JSON.parse(saved);
+    const res=await fetch(SB_URL+'/auth/v1/user',{
+      headers:{'apikey':SB_ANON,'Authorization':'Bearer '+authState.access_token}
+    });
+    if(!res.ok){localStorage.removeItem('rd_auth');authState=null;return false;}
+    // Refresh profile
+    const email=authState.email||authState.user?.email;
+    if(email){
+      const pRes=await fetch(WK+'/api/rd/user-profile?email='+encodeURIComponent(email));
+      if(pRes.ok) authState.profile=await pRes.json();
+    }
+    return true;
+  }catch(e){return false;}
+}
+// createUser v2 defined below
+// loadUserList v2 defined below in injected section
+
+// ── NAMES ─────────────────────────────────────────────────────────────────
+const getNameMap=()=>{try{return JSON.parse(localStorage.getItem('rd_namemap')||'{}')}catch(e){return{}}};
+function getDisplayName(username,fallback){
+  const nm=getNameMap();return nm[username]||fallback||username;
+}
+function renderNameMapConfig(){
+  const members=getMembers();
+  const nm=getNameMap();
+  const el=document.getElementById('nameMapRows');
+  if(!el) return;
+  el.innerHTML=members.map(u=>`
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(51,65,85,.2)">
+      <span style="font-size:12px;color:var(--m);width:80px;flex-shrink:0">${u}</span>
+      <input class="inp" id="nm_${u}" value="${nm[u]||''}" placeholder="Nhập tên thật..." style="flex:1">
+    </div>`).join('');
+}
+function saveNameMap(){
+  const members=getMembers();
+  const nm={};
+  members.forEach(u=>{const v=document.getElementById('nm_'+u)?.value.trim();if(v)nm[u]=v;});
+  localStorage.setItem('rd_namemap',JSON.stringify(nm));
+  pushCfgCloud('kpi_namemap',nm);
+  toast('✓ Đã lưu tên thành viên',false);
+  if(projData) renderKPI();
+}
+
+// ── HISTORY RESYNC ────────────────────────────────────────────────────────
+async function forceResync(){
+  if(!projData?.results){toast('Tải dữ liệu trước!',true);return;}
+  // Clear autosave state to force re-save
+  localStorage.removeItem(K.autosave);
+  const status=document.getElementById('autoSaveStatus');
+  status.innerHTML='<span class="autosave-dot"></span>Đang đồng bộ lại...';
+  try{
+    for(const type of['week','month','quarter','year']) await doSaveSnapshot(type,'force_resync');
+    const newState={week:new Date().toISOString().slice(0,10),month:null,quarter:null,year:null};
+    // Re-mark week as saved today
+    localStorage.setItem(K.autosave,JSON.stringify(newState));
+    status.textContent='✓ Đồng bộ xong';setTimeout(()=>status.textContent='',4000);
+    loadHistory();
+    toast('✓ Đã đồng bộ lại lịch sử KPI',false);
+  }catch(e){status.textContent='';toast('Lỗi: '+e.message,true);}
+}
+
+// ── ATTENDANCE ────────────────────────────────────────────────────────────
+let _todayAtt={};
+async function loadAttendanceToday(){
+  const today=new Date().toISOString().slice(0,10);
+  document.getElementById('attDate').textContent='Hôm nay: '+new Date().toLocaleDateString('vi-VN',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  try{
+    const res=await fetch(WK+'/api/rd/attendance?week='+isoWeek());
+    const d=await res.json();
+    const todayRecs=(d.attendance||[]).filter(a=>a.date===today);
+    _todayAtt={};todayRecs.forEach(a=>_todayAtt[a.username]=a);
+    // Render today grid (all members)
+    const members=getMembers();
+    const grid=document.getElementById('attTodayGrid');
+    grid.innerHTML=members.map(u=>{
+      const a=_todayAtt[u];
+      const dispName=getDisplayName(u);
+      if(!a) return `<div class="att-card"><div class="att-name">${dispName}</div><div class="att-status att-absent">Chưa check-in</div></div>`;
+      const ci=a.check_in_time?new Date(a.check_in_time).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'—';
+      const co=a.check_out_time?new Date(a.check_out_time).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'—';
+      const wm=a.work_minutes?Math.floor(a.work_minutes/60)+'h'+a.work_minutes%60+'m':'';
+      return `<div class="att-card">
+        <div class="att-name">${dispName}</div>
+        <div class="att-time">Vào: ${ci} ${co!=='—'?'· Ra: '+co:''}</div>
+        ${wm?`<div class="att-time">${wm}</div>`:''}
+        <div class="att-status att-${a.check_out_time?'out':a.status==='late'?'late':'present'}">${a.check_out_time?'Đã ra về':a.status==='late'?'Đi muộn':'Đang làm'}</div>
+      </div>`;
+    }).join('');
+    // My status
+    const myU=authState?.profile?.username;
+    const myA=myU?_todayAtt[myU]:null;
+    const myStatus=document.getElementById('attMyStatus');
+    const btnIn=document.getElementById('btnCheckIn');
+    const btnOut=document.getElementById('btnCheckOut');
+    if(myU){
+      if(!myA){btnIn.style.display='';btnOut.style.display='none';myStatus.textContent='Bạn chưa check-in hôm nay';}
+      else if(!myA.check_out_time){btnIn.style.display='none';btnOut.style.display='';
+        const ci2=new Date(myA.check_in_time).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
+        myStatus.textContent='✓ Đã check-in lúc '+ci2+(myA.status==='late'?' (đi muộn)':'');}
+      else{btnIn.style.display='none';btnOut.style.display='none';
+        const wm2=myA.work_minutes?Math.floor(myA.work_minutes/60)+'h'+myA.work_minutes%60+'m':'?';
+        myStatus.textContent='✓ Đã hoàn thành ngày làm việc — '+wm2;}
+    }else{
+      btnIn.style.display='none';btnOut.style.display='none';
+      myStatus.textContent='⚠️ Chưa liên kết username Base trong hồ sơ';
+    }
+  }catch(e){document.getElementById('attTodayGrid').innerHTML='<div style="color:var(--red)">Lỗi: '+e.message+'</div>';}
+  // Also populate week selector
+  populateWeekSel();
+}
+function populateWeekSel(){
+  const sel=document.getElementById('attWeekSel');
+  if(!sel) return;
+  const opts=[];
+  for(let i=0;i<8;i++){
+    const d=new Date();d.setDate(d.getDate()-i*7);
+    const wk=isoWeek(d);
+    const{from,to}=weekRange(wk);
+    opts.push(`<option value="${wk}">${wk.replace('-W','T')} (${new Date(from).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'})}–${new Date(to).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit'})})</option>`);
+  }
+  sel.innerHTML=opts.join('');
+  loadAttendanceWeek();
+}
+async function loadAttendanceWeek(){
+  const sel=document.getElementById('attWeekSel');
+  const week=sel?.value||isoWeek();
+  const{from,to}=weekRange(week);
+  try{
+    const res=await fetch(WK+'/api/rd/attendance?week='+week);
+    const d=await res.json();
+    const recs=d.attendance||[];
+    const members=getMembers();
+    // Build date array for the week
+    const dates=[];let cur=new Date(from);const end=new Date(to);
+    while(cur<=end){dates.push(cur.toISOString().slice(0,10));cur=new Date(cur);cur.setDate(cur.getDate()+1);}
+    const statusIcon={present:'🟢',late:'🟡',absent:'⭕',half:'🔵'};
+    const map={};recs.forEach(a=>{if(!map[a.username])map[a.username]={};map[a.username][a.date]=a;});
+    let h='<div class="tw"><table style="font-size:11px"><thead><tr><th>Thành viên</th>';
+    dates.forEach(dt=>{const d2=new Date(dt);h+=`<th style="text-align:center;min-width:60px">${['CN','T2','T3','T4','T5','T6','T7'][d2.getDay()]}<br>${d2.getDate()}/${d2.getMonth()+1}</th>`;});
+    h+='<th>Tổng giờ</th></tr></thead><tbody>';
+    members.forEach(u=>{
+      const dispName=getDisplayName(u);
+      let totalMin=0;
+      h+=`<tr><td style="font-weight:500">${dispName}</td>`;
+      dates.forEach(dt=>{
+        const a=map[u]?.[dt];
+        const isWeekend=[0,6].includes(new Date(dt).getDay());
+        if(isWeekend){h+=`<td style="text-align:center;color:var(--b)">—</td>`;return;}
+        if(!a){const isPast=dt<new Date().toISOString().slice(0,10);h+=`<td style="text-align:center">${isPast?'⭕':'·'}</td>`;return;}
+        if(a.work_minutes) totalMin+=a.work_minutes;
+        const ci=a.check_in_time?new Date(a.check_in_time).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'}):'';
+        h+=`<td style="text-align:center" title="${ci}">${statusIcon[a.status]||'🟢'}${a.check_out_time?'':' ⏳'}</td>`;
+      });
+      const th=totalMin?Math.floor(totalMin/60)+'h'+totalMin%60+'m':'—';
+      h+=`<td style="text-align:center;font-weight:600">${th}</td></tr>`;
+    });
+    h+='</tbody></table></div>';
+    document.getElementById('attWeekTable').innerHTML=h;
+  }catch(e){document.getElementById('attWeekTable').innerHTML='<div style="color:var(--red)">Lỗi: '+e.message+'</div>';}
+}
+async function doCheckIn(){
+  const username=authState?.profile?.username;
+  if(!username){toast('Chưa có username trong hồ sơ!',true);return;}
+  document.getElementById('btnCheckIn').disabled=true;
+  try{
+    const res=await fetch(WK+'/api/rd/attendance/checkin',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({username})});
+    const d=await res.json();
+    if(d.success){
+      const t=new Date(d.check_in_time).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
+      toast(`✓ Check-in lúc ${t}${d.status==='late'?' — Đi muộn':''}`,false);
+      loadAttendanceToday();
+    }else throw new Error(d.error||'Lỗi');
+  }catch(e){toast('Lỗi: '+e.message,true);}
+  document.getElementById('btnCheckIn').disabled=false;
+}
+async function doCheckOut(){
+  const username=authState?.profile?.username;
+  if(!username){toast('Chưa có username trong hồ sơ!',true);return;}
+  document.getElementById('btnCheckOut').disabled=true;
+  try{
+    const res=await fetch(WK+'/api/rd/attendance/checkout',{method:'POST',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({username})});
+    const d=await res.json();
+    if(d.success){
+      const m=d.work_minutes||0;
+      toast(`✓ Check-out! Làm việc ${Math.floor(m/60)}h${m%60}m`,false);
+      loadAttendanceToday();
+    }else throw new Error(d.error||'Lỗi');
+  }catch(e){toast('Lỗi: '+e.message,true);}
+  document.getElementById('btnCheckOut').disabled=false;
+}
+
+// ── REPORT SNAPSHOT SAVE ──────────────────────────────────────────────────
+async function saveReportSnapshot(from,to,res){
+  try{
+    let totDone=0,totPlan=0,totOver=0;
+    const memberSummaries={};
+    const fromTs=new Date(from).getTime()/1000,toTs=new Date(to+'T23:59:59').getTime()/1000;
+    res.forEach(r=>{
+      const tasks=r.tasks||[],done=[],plan=[],over=[];
+      tasks.forEach(t=>{
+        const ts=t.status==='done'?(t.completed_time||t.deadline):t.deadline||t.created;
+        if(ts&&(ts<fromTs||ts>toTs))return;
+        if(t.status==='done')done.push(t);
+        else if(t.status==='overdue')over.push(t);
+        else plan.push(t);
+      });
+      totDone+=done.length;totPlan+=plan.length;totOver+=over.length;
+      memberSummaries[r.username]={done:done.length,plan:plan.length,overdue:over.length,name:r.full_name||r.username};
+    });
+    const type=rptPeriodType!=='custom'?rptPeriodType:'week';
+    const key=rptPeriodType!=='custom'?periodKey(type):from.slice(0,7);
+    await fetch(WK+'/api/rd/report-snapshot',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({period_type:type,period_key:key,period_from:from,period_to:to,
+        total_done:totDone,total_plan:totPlan,total_overdue:totOver,member_summaries:memberSummaries})});
+  }catch(e){}
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',initTheme);
+async function initApp(){
+  const authed=await checkAuth();
+  if(authed){
+    showApp();
+    loadGradeConfigUI();
+    const isAdmin=authState?.profile?.role==='admin';
+    window._isAdmin=isAdmin;
+    window._myUsername=authState?.profile?.username||authState?.email?.split('@')[0]||'';
+    document.querySelectorAll('.admin-only').forEach(el=>el.style.display=isAdmin?'':'none');
+    // Sync config từ cloud trước khi render (cross-machine realtime)
+    await loadCfgCloud();
+    if(isAdmin){await bfLoadUsers();loadUserList();}
+    loadData();
+  } else showLogin();
+}
+
+// ── Tabs ──────────────────────────────────────────────────────────────────
+const TABS=['kpi','report','board','history','attendance','bonus','config'];
+function sw(id){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',TABS[i]===id));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('active',p.id==='pane-'+id));
+  if(id==='report'){updateRptLabel();document.getElementById('printBtn').style.display='none';}
+  if(id==='board'){
+    if(!boardPeriodKey) boardPeriodKey=periodKey(boardPeriodType);
+    updateBoardLabel();
+    if(projData?.results) renderBoard();
+  }
+  if(id==='config')renderConfig();
+  if(id==='history')loadHistory();
+  if(id==='attendance'){loadAttendanceToday();}
+  if(id==='bonus'){bfPeriodChange();loadBfHistory();}
+  if(id==='config'){renderConfig();renderNameMapConfig();if(authState?.profile?.role==='admin')loadUserList();}
+}
+function toast(msg,err){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.className=err?'terr':'tok';
+  el.style.display='block';clearTimeout(el._t);
+  el._t=setTimeout(()=>el.style.display='none',2800);
+}
+initApp();
+
+// ── Attendance config ────────────────────────────────────────────────
+function getAttCfg(){try{return{...{startHour:8,workDays:22},...JSON.parse(localStorage.getItem('rd_att_cfg')||'{}')}}catch(e){return{startHour:8,workDays:22};}}
+function saveAttConfig(){
+  const h=+(document.getElementById('cfgStartHour')?.value)||8;
+  const d=+(document.getElementById('cfgWorkDays')?.value)||22;
+  const attCfgVal={startHour:h,workDays:d};
+  localStorage.setItem('rd_att_cfg',JSON.stringify(attCfgVal));
+  pushCfgCloud('kpi_att',attCfgVal);
+  toast('Đã lưu cấu hình điểm danh!');
+}
+function loadAttConfigUI(){
+  const c=getAttCfg();
+  const h=document.getElementById('cfgStartHour'),d=document.getElementById('cfgWorkDays');
+  if(h)h.value=c.startHour;if(d)d.value=c.workDays;
+}
+async function loadQuotaList(){
+  const el=document.getElementById('quotaList');if(!el)return;
+  try{
+    const users=await api('/api/rd/user-list');
+    if(!users.length){el.innerHTML='<div style="font-size:12px;color:var(--m)">Chưa có thành viên nào.</div>';return;}
+    el.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:8px">'+users.filter(u=>u.username).map(u=>
+      '<div style="background:var(--bg);border:1px solid var(--b);border-radius:8px;padding:8px 12px;display:flex;align-items:center;gap:8px">'+
+      '<span style="font-size:12px;font-weight:600">'+(u.full_name||u.username)+'</span>'+
+      '<span style="font-size:11px;color:var(--m)">mục tiêu</span>'+
+      '<input class="inp" type="number" value="'+(u.kpi_target||70)+'" style="width:65px;font-size:11px" onchange="updateUserField(this.dataset.email,\'kpi_target\',+this.value)" data-email="'+u.email+'">'+
+      '<span style="font-size:10px;color:var(--m)">task/đ</span></div>'
+    ).join('')+'</div>';
+  }catch(e){el.innerHTML='<div style="color:var(--red);font-size:12px">'+e.message+'</div>';}
+}
+
+// ── Basework API Connection config ────────────────────────────────────
+async function loadBaseApiConfig(){
+  const el=document.getElementById('baseApiStatus');if(!el)return;
+  try{
+    const c=await api('/api/rd/basework-api-config');
+    document.getElementById('baseApiUrl').value=c.base_url||'';
+    document.getElementById('baseApiProjectId').value=c.project_id||'';
+    document.getElementById('baseApiToken').placeholder=c.token_set?('Token hiện tại: '+c.token_masked+' · Bỏ trống = giữ nguyên'):'Chưa có token — nhập vào đây';
+    el.innerHTML=c.source==='config'
+      ?'<span style="color:var(--green)">✅ Đã cấu hình qua UI</span>'
+      :'<span style="color:var(--m)">ℹ️ Đang dùng giá trị mặc định từ biến môi trường</span>';
+  }catch(e){if(el)el.innerHTML='<span style="color:var(--red)">❌ '+e.message+'</span>';}
+}
+async function saveBaseApiConfig(doTest){
+  const body={
+    base_url:document.getElementById('baseApiUrl').value.trim(),
+    project_id:parseInt(document.getElementById('baseApiProjectId').value)||undefined,
+    token:document.getElementById('baseApiToken').value.trim(),
+    test:doTest,
+  };
+  const btn=document.getElementById('baseApiTestResult');
+  if(btn)btn.innerHTML='<span style="color:var(--m)">⏳ Đang lưu…</span>';
+  try{
+    const r=await api('/api/rd/basework-api-config',{method:'PUT',body:JSON.stringify(body)});
+    await loadBaseApiConfig();
+    document.getElementById('baseApiToken').value='';
+    if(doTest&&r.connection_test){
+      const ok=r.connection_test.ok;
+      if(btn)btn.innerHTML=ok
+        ?'<span style="color:var(--green)">✅ Kết nối OK ('+r.connection_test.status+')</span>'
+        :'<span style="color:var(--red)">❌ Kết nối thất bại: '+(r.connection_test.error||r.connection_test.status)+'</span>';
+    }else{
+      if(btn)btn.innerHTML='<span style="color:var(--green)">✅ Đã lưu</span>';
+      setTimeout(()=>{if(btn)btn.innerHTML='';},3000);
+    }
+    toast('Đã lưu cấu hình API!');
+  }catch(e){
+    if(btn)btn.innerHTML='<span style="color:var(--red)">❌ '+e.message+'</span>';
+    toast('Lỗi: '+e.message,true);
+  }
+}
+function baseApiToggleToken(){
+  const inp=document.getElementById('baseApiToken');
+  inp.type=inp.type==='password'?'text':'password';
+}
+
+// ── Basework Workspace config ──────────────────────────────────────────
+let _bwWorkspaces=[];
+async function loadBaseworkWorkspaces(){
+  const el=document.getElementById('bwWsList');
+  if(!el)return;
+  try{
+    _bwWorkspaces=await api('/api/rd/basework-workspaces');
+    renderBwList();
+  }catch(e){el.innerHTML='<div style="color:var(--red);font-size:12px">❌ '+e.message+'</div>';}
+}
+function renderBwList(){
+  const el=document.getElementById('bwWsList');if(!el)return;
+  if(!_bwWorkspaces.length){
+    el.innerHTML='<div style="color:var(--m);font-size:12px;padding:6px 0">Chưa có workspace. Nhấn ➕ để thêm.</div>';return;
+  }
+  el.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr style="color:var(--m);font-size:11px;text-transform:uppercase;letter-spacing:.5px">'
+    +'<th style="text-align:left;padding:5px 8px;font-weight:600">Phòng / Nhóm</th>'
+    +'<th style="text-align:center;font-weight:600">Project ID</th>'
+    +'<th style="text-align:center;font-weight:600">Loại</th>'
+    +'<th style="text-align:center;font-weight:600">Trạng thái</th>'
+    +'<th style="text-align:right;font-weight:600">Thao tác</th></tr></thead><tbody>'
+    +_bwWorkspaces.map(ws=>`
+      <tr style="border-top:1px solid var(--b)">
+        <td style="padding:8px 8px">
+          <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${ws.color||'#3b82f6'};margin-right:7px;flex-shrink:0;vertical-align:middle"></span>
+          <b style="font-size:13px">${ws.name}</b>
+          ${ws.description?`<div style="font-size:11px;color:var(--m);margin-top:2px;padding-left:17px">${ws.description}</div>`:''}
+        </td>
+        <td style="text-align:center;font-family:monospace;font-size:13px;color:var(--blue);font-weight:600">${ws.project_id}</td>
+        <td style="text-align:center;font-size:11px;color:var(--m)">${ws.type==='project'?'🗂️ Dự án':'👤 Task TV'}</td>
+        <td style="text-align:center">${ws.active!==false
+          ?'<span style="color:var(--green);font-size:12px;font-weight:600">● Đang dùng</span>'
+          :'<span style="color:var(--m);font-size:12px">○ Tắt</span>'}</td>
+        <td style="text-align:right;white-space:nowrap;padding-right:4px">
+          <button class="btn bs" style="padding:3px 10px;font-size:11px" onclick="bwEdit('${ws.id}')">✏️ Sửa</button>
+          ${ws.id!=='rd'?`<button class="btn" style="padding:3px 10px;font-size:11px;color:var(--red);border-color:var(--red);margin-left:4px" onclick="bwDelete('${ws.id}')">🗑</button>`:''}
+        </td>
+      </tr>`).join('')
+    +'</tbody></table>';
+}
+function bwAddWorkspace(){
+  document.getElementById('bwFormTitle').textContent='➕ Thêm workspace mới';
+  document.getElementById('bwFormId').value='';
+  document.getElementById('bwFormName').value='';
+  document.getElementById('bwFormProjectId').value='';
+  document.getElementById('bwFormDesc').value='';
+  document.getElementById('bwFormColor').value='#3b82f6';
+  document.getElementById('bwFormType').value='member_tasks';
+  document.getElementById('bwFormActive').value='true';
+  document.getElementById('bwWsForm').style.display='';
+  document.getElementById('bwFormName').focus();
+}
+function bwEdit(id){
+  const ws=_bwWorkspaces.find(w=>w.id===id);if(!ws)return;
+  document.getElementById('bwFormTitle').textContent='✏️ Sửa: '+ws.name;
+  document.getElementById('bwFormId').value=ws.id;
+  document.getElementById('bwFormName').value=ws.name;
+  document.getElementById('bwFormProjectId').value=ws.project_id;
+  document.getElementById('bwFormDesc').value=ws.description||'';
+  document.getElementById('bwFormColor').value=ws.color||'#3b82f6';
+  document.getElementById('bwFormType').value=ws.type||'member_tasks';
+  document.getElementById('bwFormActive').value=ws.active!==false?'true':'false';
+  document.getElementById('bwWsForm').style.display='';
+  document.getElementById('bwFormName').focus();
+}
+async function bwSaveWorkspace(){
+  const id=document.getElementById('bwFormId').value;
+  const body={
+    name:document.getElementById('bwFormName').value.trim(),
+    project_id:parseInt(document.getElementById('bwFormProjectId').value),
+    description:document.getElementById('bwFormDesc').value.trim(),
+    color:document.getElementById('bwFormColor').value,
+    type:document.getElementById('bwFormType').value,
+    active:document.getElementById('bwFormActive').value==='true',
+  };
+  if(!body.name||!body.project_id){toast('Cần nhập tên và Project ID',true);return;}
+  try{
+    if(id) await api('/api/rd/basework-workspaces/'+id,{method:'PATCH',body:JSON.stringify(body)});
+    else    await api('/api/rd/basework-workspaces',{method:'POST',body:JSON.stringify(body)});
+    bwCancelForm();await loadBaseworkWorkspaces();toast('Đã lưu workspace!');
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+async function bwDelete(id){
+  if(!confirm('Xóa workspace này?'))return;
+  try{
+    await api('/api/rd/basework-workspaces/'+id,{method:'DELETE'});
+    await loadBaseworkWorkspaces();toast('Đã xóa!');
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+function bwCancelForm(){document.getElementById('bwWsForm').style.display='none';}
+
+// ═══════════════════════════════════════════════════════════════════════
+// GRADE CONFIG
+// ═══════════════════════════════════════════════════════════════════════
+function getGradeCfg(){
+  try{return JSON.parse(localStorage.getItem('rd_grade_cfg'))||{A:90,B:75,C:60};}
+  catch{return{A:90,B:75,C:60};}
+}
+function saveSheetUrl(){
+  const url=(document.getElementById('sheetsUrlInp')?.value||'').trim();
+  localStorage.setItem('rd_sheets_url',url);
+  pushCfgCloud('kpi_sheets_url',url);
+  toast('Đã lưu URL Google Sheet!');
+}
+
+function openSheetModal(){
+  const url=localStorage.getItem('rd_sheets_url')||'';
+  document.getElementById('sheetModalUrl').value=url;
+  document.getElementById('sheetModalStatus').textContent='';
+  _updateSheetModalLink(url);
+  document.getElementById('sheetModal').style.display='flex';
+}
+function closeSheetModal(){
+  document.getElementById('sheetModal').style.display='none';
+}
+function _updateSheetModalLink(url){
+  const el=document.getElementById('sheetModalLink');
+  if(!el) return;
+  // Extract spreadsheet ID from the script URL if possible
+  // Apps Script URLs don't directly give sheet ID, just show open link if URL saved
+  el.innerHTML=url
+    ?'<span style="color:var(--green)">✅ Đã lưu URL</span>'
+    :'<span style="color:var(--m)">Chưa có URL</span>';
+}
+function saveSheetUrlFromModal(){
+  const url=(document.getElementById('sheetModalUrl')?.value||'').trim();
+  localStorage.setItem('rd_sheets_url',url);
+  pushCfgCloud('kpi_sheets_url',url);
+  // Also update config tab input if visible
+  const inp=document.getElementById('sheetsUrlInp');
+  if(inp) inp.value=url;
+  _updateSheetModalLink(url);
+  document.getElementById('sheetModalStatus').textContent='✅ Đã lưu URL!';
+  toast('Đã lưu URL Google Sheet!');
+}
+async function sheetModalSync(type){
+  // Save URL first
+  const urlInp=(document.getElementById('sheetModalUrl')?.value||'').trim();
+  if(urlInp) { localStorage.setItem('rd_sheets_url',urlInp); pushCfgCloud('kpi_sheets_url',urlInp); }
+  const status=document.getElementById('sheetModalStatus');
+  if(status) status.textContent='⏳ Đang đồng bộ...';
+  await syncToSheet(type);
+  // syncToSheet shows toast, also update modal status
+  const saved=localStorage.getItem('rd_sheets_url');
+  if(saved){
+    const now=new Date().toLocaleTimeString('vi-VN');
+    if(status) status.textContent='✅ Đồng bộ lúc '+now;
+  }
+}
+// Close modal when click backdrop
+document.addEventListener('click',function(e){
+  const modal=document.getElementById('sheetModal');
+  if(modal && e.target===modal) closeSheetModal();
+});
+
+
+async function syncToSheet(type){
+  const url=localStorage.getItem('rd_sheets_url')||'';
+  if(!url){toast('Chưa nhập URL Google Sheet!',true);return;}
+  const status=document.getElementById('sheetSyncStatus');
+  if(status) status.textContent='⏳ Đang đồng bộ...';
+  try{
+    const now=new Date();
+    // Dùng period đang chọn trên tab KPI (week/month/quarter/year/all)
+    const curPeriod=kpiPeriod==='all'?'week':kpiPeriod;
+    const pKey=periodKey(curPeriod);
+    const pLabel=periodLabel(curPeriod,pKey);
+    const periodTypeLabel={week:'Tuần',month:'Tháng',quarter:'Quý',year:'Năm'}[curPeriod]||'Tuần';
+
+    let payload={type,periodKey:pKey,periodType:curPeriod,periodTypeLabel,periodLabel:pLabel};
+
+    // ── KPI data (theo period đang chọn) ──
+    if(type==='kpi'||type==='all'){
+      const configMs=getMembers();
+      let filtered=getKpiFilteredResults();
+      if(configMs.length) filtered=filtered.filter(r=>configMs.includes(r.username));
+      const grCfg=getGradeCfg();
+      payload.kpi=filtered.map(r=>{
+        const sc=(r.kq_score!=null)?{score:r.kq_score,m1:0,m2:0,m3:0,m4:0,m5:0,m6:0}:calcScore(r);
+        const gr=sc.score>=grCfg.A?'A':sc.score>=grCfg.B?'B':sc.score>=grCfg.C?'C':'D';
+        const tasks=r.tasks||[];
+        // Đếm task gốc (không tính subtask)
+        const rootTasks=tasks.filter(t=>!t.parent_id);
+        return{
+          periodKey:pKey,periodLabel:pLabel,periodTypeLabel,
+          username:r.username,fullName:getDisplayName(r.username,r.full_name||r.username),
+          m1:sc.m1,m2:sc.m2,m3:sc.m3,m4:sc.m4,m5:sc.m5,m6:sc.m6,score:sc.score,grade:gr,
+          taskTotal:rootTasks.length,
+          taskDone:rootTasks.filter(t=>t.status==='done').length,
+          taskOver:rootTasks.filter(t=>t.status==='overdue').length
+        };
+      });
+    }
+
+    // ── Task data (phân cấp task/subtask) ──
+    if(type==='tasks'||type==='all'){
+      const priMap={1:'🔴 Khẩn',2:'🟡 Cao',3:'🟢 Bình thường',4:'⚪ Thấp'};
+      const stsMap={done:'✅ Xong',inprogress:'🔵 Đang làm',overdue:'🔴 Trễ',todo:'⬜ Chờ'};
+      const revMap={1:'⭐ Tốt',2:'👍 Đạt',3:'⚠️ Chưa đạt'};
+      const diff2l=d=>d>=90?'🔥 Rất khó ('+d+')':d>=75?'💪 Khó ('+d+')':d>=55?'🟡 Vừa ('+d+')':'🟢 Dễ ('+d+')';
+      const ts2s=ts=>ts&&ts>0?new Date(ts*1000).toLocaleDateString('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric'}):'';
+      const allTasks=[];
+      const configMs2=getMembers();
+      const filteredResults=(projData?.results||[]).filter(r=>!configMs2.length||configMs2.includes(r.username));
+      filteredResults.forEach(r=>{
+        const uname=r.username;
+        const fname=getDisplayName(uname,r.full_name||uname);
+        const tasks=r.tasks||[];
+        // Tạo map id→name cho task gốc
+        const idToName={};
+        tasks.forEach(t=>{ if(!t.parent_id) idToName[String(t.id)]=t.name||''; });
+        // Sắp xếp: task gốc trước, subtask theo sau task cha của nó
+        const roots=tasks.filter(t=>!t.parent_id);
+        roots.forEach(parent=>{
+          allTasks.push({
+            username:uname,fullName:fname,
+            taskType:'📋 Task',parentName:'',
+            id:String(parent.id||''),
+            name:parent.name||'',
+            statusLabel:stsMap[parent.status]||parent.status||'',
+            priorityLabel:priMap[parent.priority]||'',
+            urgent:!!parent.urgent,
+            diffLabel:diff2l(parent.difficulty||65),
+            subtaskCount:parent.subtask_count||0,
+            created:ts2s(parent.created),
+            deadline:ts2s(parent.deadline),
+            completed:ts2s(parent.completed_time),
+            reviewLabel:revMap[parent.review]||'',
+            comment:parent.comment||''
+          });
+          // Subtask của task này
+          const subs=tasks.filter(t=>t.parent_id&&String(t.parent_id)===String(parent.id));
+          subs.forEach(sub=>{
+            allTasks.push({
+              username:uname,fullName:fname,
+              taskType:'↳ Subtask',parentName:parent.name||'',
+              id:String(sub.id||''),
+              name:sub.name||'',
+              statusLabel:stsMap[sub.status]||sub.status||'',
+              priorityLabel:priMap[sub.priority]||'',
+              urgent:!!sub.urgent,
+              diffLabel:diff2l(sub.difficulty||65),
+              subtaskCount:0,
+              created:ts2s(sub.created),
+              deadline:ts2s(sub.deadline),
+              completed:ts2s(sub.completed_time),
+              reviewLabel:revMap[sub.review]||'',
+              comment:sub.comment||''
+            });
+          });
+        });
+      });
+      payload.tasks=allTasks;
+    }
+
+    const resp=await fetch(url,{method:'POST',body:JSON.stringify(payload)});
+    const result=await resp.json().catch(()=>({}));
+    if(result.ok===false) throw new Error(result.error||'Lỗi từ Google Sheet');
+    const kpiCount=payload.kpi?.length||0;
+    const taskCount=payload.tasks?.length||0;
+    const msg=`✅ Đồng bộ ${pLabel} — ${kpiCount?kpiCount+' KPI · ':''}${taskCount?taskCount+' đầu việc':''}`;
+    if(status) status.textContent=msg;
+    toast(msg);
+  }catch(e){
+    const msg='❌ Lỗi: '+e.message;
+    if(status) status.textContent=msg;
+    toast(msg,true);
+  }
+}
+
+function saveGradeConfig(){
+  const cfg={A:+document.getElementById('gradeA').value||90,
+              B:+document.getElementById('gradeB').value||75,
+              C:+document.getElementById('gradeC').value||60};
+  localStorage.setItem('rd_grade_cfg',JSON.stringify(cfg));
+  pushCfgCloud('kpi_grade',cfg);
+  document.getElementById('gradeD').value=cfg.C;
+  toast('Đã lưu cấu hình xếp loại!');
+}
+function loadGradeConfigUI(){
+  const cfg=getGradeCfg();
+  const a=document.getElementById('gradeA'),b=document.getElementById('gradeB'),c=document.getElementById('gradeC'),d=document.getElementById('gradeD');
+  if(a)a.value=cfg.A;if(b)b.value=cfg.B;if(c)c.value=cfg.C;if(d)d.value=cfg.C;
+}
+function gradeTag(score){
+  const cfg=getGradeCfg();
+  if(score>=cfg.A)return '<span class="grade grade-A">A</span>';
+  if(score>=cfg.B)return '<span class="grade grade-B">B</span>';
+  if(score>=cfg.C)return '<span class="grade grade-C">C</span>';
+  return '<span class="grade grade-D">D</span>';
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MEMBER PERSONAL DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════
+async function renderMemberDash(){
+  const pane=document.getElementById('pane-kpi');
+  if(!pane)return;
+  const email=authState?.email;
+  const uname=authState?.profile?.username;
+  if(!uname){pane.innerHTML='<div style="padding:30px;text-align:center;color:var(--m)">Vui lòng liên hệ admin để thiết lập tài khoản.</div>';return;}
+  try{
+    const data=window._lastKPI||projData;
+    if(!data?.results){pane.innerHTML='<div style="padding:30px;text-align:center;color:var(--m)"><span class="spin"></span> Đang tải...</div>';await loadData();return;}
+    const r=(data.results||[]).find(x=>x.username===uname);
+    if(!r){pane.innerHTML='<div style="padding:30px;text-align:center;color:var(--m)">Không tìm thấy dữ liệu KPI của bạn trong kỳ này.</div>';return;}
+    const sc=(r.kq_score!=null)?{score:r.kq_score,m1:0,m2:0,m3:0,m4:0,m5:0,m6:0}:calcScore(r),col=scColor(sc.score),grade=gradeTag(sc.score);
+    const profile=authState?.profile||{};
+    const target=profile.kpi_target||70;
+    const prog=Math.min(sc.score/target*100,100).toFixed(0);
+    const dispName=profile.full_name||uname;
+    pane.innerHTML=`
+      <div class="member-dash-card">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <div>
+            <div style="font-size:13px;color:var(--m);margin-bottom:4px">Điểm KPI của bạn</div>
+            <div style="display:flex;align-items:baseline;gap:4px">
+              <span class="member-kpi-score" style="color:${col}">${sc.score.toFixed(1)}</span>
+              <span class="member-kpi-grade">${grade}</span>
+            </div>
+            <div style="font-size:12px;color:var(--m);margin-top:4px">Mục tiêu: ${target} điểm</div>
+          </div>
+          <div style="flex:1;min-width:180px">
+            <div style="font-size:12px;color:var(--m);margin-bottom:4px">Tiến độ ${prog}%</div>
+            <div style="background:var(--card2);border-radius:6px;height:10px;overflow:hidden">
+              <div style="height:100%;width:${prog}%;background:${col};border-radius:6px;transition:width .5s"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="member-dash-card">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">📋 Chi tiết 5 chỉ tiêu</div>
+        ${METRICS.map(m=>{
+          const w=getCfg()[m.key]||0,s=(sc[m.key.replace('w','m')]||0).toFixed(1);
+          return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="width:12px;height:12px;border-radius:50%;background:${m.color};flex-shrink:0"></div>
+            <div style="flex:1;font-size:12px">${m.name}</div>
+            <div style="font-size:13px;font-weight:600;color:${m.color}">${s}</div>
+            <div style="font-size:11px;color:var(--m)">×${w}%</div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div class="member-dash-card">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px">📈 Thống kê task</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <div><div style="font-size:22px;font-weight:700;color:var(--t)">${r.total_tasks||0}</div><div style="font-size:11px;color:var(--m)">Tổng task</div></div>
+          <div><div style="font-size:22px;font-weight:700;color:var(--green)">${r.done_tasks||0}</div><div style="font-size:11px;color:var(--m)">Hoàn thành</div></div>
+          <div><div style="font-size:22px;font-weight:700;color:var(--blue)">${r.inprogress_tasks||0}</div><div style="font-size:11px;color:var(--m)">Đang làm</div></div>
+          <div><div style="font-size:22px;font-weight:700;color:var(--red)">${r.overdue_tasks||0}</div><div style="font-size:11px;color:var(--m)">Quá hạn</div></div>
+        </div>
+      </div>`;
+  }catch(e){pane.innerHTML='<div style="padding:30px;text-align:center;color:var(--red)">❌ '+e.message+'</div>';}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// USER MANAGEMENT (CRUD)
+// ═══════════════════════════════════════════════════════════════════════
+async function loadUserList(){
+  const area=document.getElementById('userListArea');
+  if(!area)return;
+  area.innerHTML='<span class="spin"></span> Đang tải...';
+  try{
+    const res=await api('/api/rd/user-list');
+    const users=Array.isArray(res)?res:(res.users||[]);
+    if(!users.length){area.innerHTML='<div style="color:var(--m);font-size:12px">Chưa có tài khoản nào.</div>';return;}
+    const lvlMul={junior:'1.0×',mid:'1.5×',senior:'2.0×',lead:'2.5×'};
+    let h='<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">'
+      +'<thead><tr style="color:var(--m)"><th style="text-align:left;padding:4px 8px">Email</th><th>Họ tên</th><th>Username</th><th>Vai trò</th><th>Cấp bậc</th><th>Lương CB</th><th>Mục tiêu</th><th></th></tr></thead><tbody>';
+    users.forEach(u=>{
+      h+=`<tr style="border-top:1px solid var(--bdr)">
+        <td style="padding:5px 8px">${u.email||''}</td>
+        <td><input class="inp" style="width:130px;font-size:11px" value="${u.full_name||''}" onchange="updateUserField('${u.email}','full_name',this.value)"></td>
+        <td><input class="inp" style="width:90px;font-size:11px" value="${u.username||''}" onchange="updateUserField('${u.email}','username',this.value)"></td>
+        <td><select class="inp" style="font-size:11px" onchange="updateUserField('${u.email}','role',this.value)">
+          <option value="member"${u.role==='member'?' selected':''}>Member</option>
+          <option value="admin"${u.role==='admin'?' selected':''}>Admin</option>
+        </select></td>
+        <td><select class="inp" style="font-size:11px" onchange="updateUserField('${u.email}','level',this.value)">
+          ${['junior','mid','senior','lead'].map(l=>`<option value="${l}"${u.level===l?' selected':''}>${l} ${lvlMul[l]||''}</option>`).join('')}
+        </select></td>
+        <td><input class="inp" type="number" style="width:90px;font-size:11px" value="${u.base_salary||0}" onchange="updateUserField('${u.email}','base_salary',+this.value)"></td>
+        <td><input class="inp" type="number" style="width:65px;font-size:11px" value="${u.kpi_target||70}" onchange="updateUserField('${u.email}','kpi_target',+this.value)"></td>
+        <td><button class="btn" style="font-size:10px;padding:3px 8px;background:var(--red);color:#fff" onclick="deleteUser('${u.email}')">🗑️</button></td>
+      </tr>`;
+    });
+    h+='</tbody></table></div>';
+    area.innerHTML=h;
+  }catch(e){area.innerHTML='<div style="color:var(--red)">❌ '+e.message+'</div>';}
+}
+async function updateUserField(email,field,value){
+  try{
+    await api('/api/rd/user-profile/'+encodeURIComponent(email),{method:'PATCH',body:JSON.stringify({[field]:value})});
+    // Update in-memory cache so calcBonus() sees latest data immediately
+    const u=_bfUsers.find(u=>u.email===email);
+    if(u) u[field]=value;
+    toast('Đã cập nhật!');
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+async function deleteUser(email){
+  if(!confirm('Xoá tài khoản '+email+'?'))return;
+  try{
+    await api('/api/rd/user-profile/'+encodeURIComponent(email),{method:'DELETE'});
+    toast('Đã xoá tài khoản!');
+    loadUserList();
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+async function createUser(){
+  const email=document.getElementById('newUserEmail').value.trim();
+  const pass=document.getElementById('newUserPass').value;
+  const name=document.getElementById('newUserName').value.trim();
+  const uname=document.getElementById('newUserBase').value.trim();
+  const level=document.getElementById('newUserLevel')?.value||'mid';
+  const salary=+(document.getElementById('newUserSalary')?.value)||0;
+  const target=+(document.getElementById('newUserTarget')?.value)||70;
+  const role=document.getElementById('newUserRole').value;
+  if(!email||!pass){toast('Nhập email và mật khẩu!',true);return;}
+  try{
+    await api('/api/rd/create-user',{method:'POST',body:JSON.stringify({email,password:pass,full_name:name,username:uname,role,level,base_salary:salary,kpi_target:target})});
+    toast('Tạo tài khoản thành công!');
+    loadUserList();
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BONUS FUND
+// ═══════════════════════════════════════════════════════════════════════
+let _bfUsers=[];
+async function bfLoadUsers(){
+  try{const res=await api('/api/rd/user-list');_bfUsers=Array.isArray(res)?res:(res.users||[]);}catch(e){}
+}
+function bfPeriodChange(){
+  const type=document.getElementById('bfPeriodType')?.value||'month';
+  const sel=document.getElementById('bfPeriodKey');
+  if(!sel)return;
+  const opts=[];
+  const now=new Date();
+  if(type==='week'){
+    for(let i=0;i<8;i++){const d=new Date(now);d.setDate(d.getDate()-i*7);const y=d.getFullYear();const w=getWeekNum(d);opts.push({v:`${y}-W${String(w).padStart(2,'0')}`,l:`Tuần ${w}/${y}`});}
+  }else if(type==='month'){
+    for(let i=0;i<6;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);opts.push({v:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,l:`Tháng ${d.getMonth()+1}/${d.getFullYear()}`});}
+  }else if(type==='quarter'){
+    for(let i=0;i<4;i++){const d=new Date(now.getFullYear(),now.getMonth()-i*3,1);const q=Math.floor(d.getMonth()/3)+1;opts.push({v:`${d.getFullYear()}-Q${q}`,l:`Quý ${q}/${d.getFullYear()}`});}
+  }else{
+    for(let i=0;i<3;i++)opts.push({v:`${now.getFullYear()-i}`,l:`Năm ${now.getFullYear()-i}`});
+  }
+  sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('');
+  loadBfHistory();
+}
+function getWeekNum(d){const s=new Date(d.getFullYear(),0,1);return Math.ceil(((d-s)/86400000+s.getDay()+1)/7);}
+async function calcBonus(){
+  const total=+(document.getElementById('bfTotal').value)||0;
+  const adminPct=+(document.getElementById('bfAdminPct').value)||0;
+  if(!total){toast('Nhập tổng quỹ thưởng!',true);return;}
+  // Always refresh user profiles to get latest level/salary settings
+  await bfLoadUsers();
+  const periodKey=document.getElementById('bfPeriodKey').value;
+  const periodType=document.getElementById('bfPeriodType').value;
+  // Load KPI for period — try snapshot DB first, fall back to current projData
+  let kpiMap={};
+  try{
+    const snaps=await api('/api/rd/snapshots?period_type='+periodType+'&year='+(periodKey.split('-')[0]||new Date().getFullYear()));
+    const matchSnap=(snaps||[]).find(s=>s.period_key===periodKey);
+    if(matchSnap?.results){
+      matchSnap.results.forEach(r=>{kpiMap[r.username]={score:r.score||0,full_name:r.full_name||r.username};});
+    }
+  }catch(e){}
+  // Fallback to current loaded data
+  if(!Object.keys(kpiMap).length&&projData?.results){
+    projData.results.forEach(r=>{const sc=(r.kq_score!=null)?{score:r.kq_score}:calcScore(r);kpiMap[r.username]={score:sc.score,full_name:r.full_name||r.username};});
+  }
+  const levelMul={junior:1.0,mid:1.5,senior:2.0,lead:2.5};
+  const memberPool=total*(1-adminPct/100);
+  const adminPool=total*adminPct/100;
+  // Build member list: primary from projData (real members in Baseworks),
+  // enriched with profile data (level/salary) from rd_user_profiles (_bfUsers)
+  let members=[];
+  const baseList=projData?.results?.length?projData.results:_bfUsers.filter(u=>u.username);
+  baseList.forEach(r=>{
+    // Match profile: by username first, then by email prefix (rd01@nsca.vn → 'rd01')
+    const prof=_bfUsers.find(u=>u.username&&u.username===r.username)
+      ||_bfUsers.find(u=>u.email&&u.email.split('@')[0]===r.username)
+      ||{};
+    members.push({username:r.username,full_name:r.full_name||prof.full_name||r.username,
+      email:prof.email||r.email||'',
+      level:prof.level||'mid',
+      base_salary:+(prof.base_salary)||0,
+      kpi_target:+(prof.kpi_target)||70});
+  });
+  if(!members.length){toast('Chưa có thành viên. Nhấn 🔄 Làm mới trước!',true);return;}
+  // compute weights
+  const weights=members.map(u=>{
+    const score=kpiMap[u.username]?.score||0;
+    const mul=levelMul[u.level||'mid']||1.5;
+    const sal=u.base_salary||0;
+    return{...u,score,mul,sal,weight:score*mul*(sal||1)};
+  });
+  const totalWeight=weights.reduce((s,w)=>s+w.weight,0)||1;
+  const dist=weights.map(w=>({
+    username:w.username,
+    full_name:w.full_name||kpiMap[w.username]?.full_name||w.username,
+    email:w.email,level:w.level||'mid',
+    base_salary:w.sal,kpi_score:w.score,
+    grade:gradeTag(w.score).replace(/<[^>]+>/g,''),
+    multiplier:w.mul,weight:w.weight,
+    share:totalWeight>0?(w.weight/totalWeight*memberPool):0
+  })).sort((a,b)=>b.share-a.share);
+  // Store for save
+  window._bfResult={periodType,periodKey,total,adminPct,adminPool,memberPool,dist,
+    gradeConfig:getGradeCfg()};
+  // Render
+  const gcfg=getGradeCfg();
+  let h='<table style="width:100%;font-size:12px;border-collapse:collapse">'
+    +'<thead><tr style="color:var(--m)"><th style="text-align:left;padding:4px 6px">Thành viên</th><th>Cấp bậc</th><th>KPI</th><th>Xếp loại</th><th>Lương CB</th><th>Hệ số</th><th style="text-align:right">Thưởng (VNĐ)</th></tr></thead><tbody>';
+  dist.forEach(d=>{
+    h+=`<tr style="border-top:1px solid var(--bdr)">
+      <td style="padding:5px 6px"><b>${d.full_name}</b><div style="font-size:10px;color:var(--m)">${d.username}</div></td>
+      <td style="text-align:center">${d.level}</td>
+      <td style="text-align:center;font-weight:700">${d.kpi_score.toFixed(1)}</td>
+      <td style="text-align:center">${gradeTag(d.kpi_score)}</td>
+      <td style="text-align:right">${d.base_salary.toLocaleString('vi-VN')}</td>
+      <td style="text-align:center">${d.multiplier}×</td>
+      <td style="text-align:right;font-weight:700;color:var(--green)">${Math.round(d.share).toLocaleString('vi-VN')}</td>
+    </tr>`;
+  });
+  if(adminPool>0){
+    h+=`<tr style="border-top:2px solid var(--bdr);background:var(--card2)">
+      <td colspan="6" style="padding:5px 6px;color:var(--m)">Phần admin/quản lý (${adminPct}%)</td>
+      <td style="text-align:right;font-weight:700;color:var(--blue)">${Math.round(adminPool).toLocaleString('vi-VN')}</td>
+    </tr>`;
+  }
+  h+=`<tr style="border-top:2px solid var(--bdr);font-weight:700">
+    <td colspan="6" style="padding:5px 6px">Tổng cộng</td>
+    <td style="text-align:right;color:var(--t)">${Math.round(total).toLocaleString('vi-VN')}</td>
+  </tr>`;
+  h+='</tbody></table>';
+  document.getElementById('bfResultTable').innerHTML=h;
+  document.getElementById('bfResultCard').style.display='';
+  toast('Đã tính xong!');
+}
+async function saveBonusFund(){
+  if(!window._bfResult){toast('Tính thưởng trước!',true);return;}
+  const r=window._bfResult;
+  const notes=document.getElementById('bfNotes').value;
+  try{
+    await api('/api/rd/bonus-fund',{method:'POST',body:JSON.stringify({
+      period_type:r.periodType,period_key:r.periodKey,
+      period_label:document.getElementById('bfPeriodKey').options[document.getElementById('bfPeriodKey').selectedIndex]?.text||r.periodKey,
+      total_amount:r.total,admin_percent:r.adminPct,admin_amount:r.adminPool,
+      member_amount:r.memberPool,distribution:r.dist,grade_config:r.gradeConfig,notes
+    })});
+    toast('Đã lưu quỹ thưởng!');
+    loadBfHistory();
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+async function loadBfHistory(){
+  const el=document.getElementById('bfHistList');
+  if(!el)return;
+  try{
+    const data=await api('/api/rd/bonus-funds');
+    const list=Array.isArray(data)?data:(data.funds||[]);
+    if(!list.length){el.innerHTML='<div style="color:var(--m);font-size:12px">Chưa có lịch sử.</div>';return;}
+    el.innerHTML=list.map(f=>`
+      <div class="bf-hist-item" onclick="loadBfDetail('${f.period_key}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><b>${f.period_label||f.period_key}</b> <span style="font-size:11px;color:var(--m)">(${f.period_type})</span></div>
+          <div style="font-weight:700;color:var(--green)">${(+f.total_amount||0).toLocaleString('vi-VN')} ₫</div>
+        </div>
+        <div style="font-size:11px;color:var(--m);margin-top:2px">${f.notes||''} · ${new Date(f.saved_at).toLocaleDateString('vi-VN')}</div>
+      </div>`).join('');
+  }catch(e){el.innerHTML='<div style="color:var(--red)">❌ '+e.message+'</div>';}
+}
+async function loadBfDetail(periodKey){
+  try{
+    const f=await api('/api/rd/bonus-fund/'+encodeURIComponent(periodKey));
+    const dist=f.distribution||[];
+    document.getElementById('bfResultTable').innerHTML=`<div style="font-size:13px;font-weight:600;margin-bottom:8px">${f.period_label||periodKey}</div>`
+      +'<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:var(--m)"><th style="text-align:left;padding:4px 6px">Thành viên</th><th>KPI</th><th>Xếp loại</th><th style="text-align:right">Thưởng</th></tr></thead><tbody>'
+      +dist.map(d=>`<tr style="border-top:1px solid var(--bdr)"><td style="padding:5px 6px"><b>${d.full_name}</b></td><td style="text-align:center">${(+d.kpi_score||0).toFixed(1)}</td><td style="text-align:center"><span class="grade grade-${d.grade}">${d.grade}</span></td><td style="text-align:right;font-weight:700;color:var(--green)">${Math.round(+d.share||0).toLocaleString('vi-VN')} ₫</td></tr>`).join('')
+      +'</tbody></table>';
+    document.getElementById('bfResultCard').style.display='';
+    sw('bonus');
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+function toggleTheme(){
+  const isLight=document.documentElement.classList.toggle('light');
+  localStorage.setItem('rd_theme',isLight?'light':'dark');
+  document.getElementById('themeBtn').textContent=isLight?'🌙':'☀️';
+}
+function initTheme(){
+  const saved=localStorage.getItem('rd_theme');
+  if(saved==='light'){document.documentElement.classList.add('light');document.getElementById('themeBtn').textContent='🌙';}
+}
+async function exportBonusExcel(){
+  if(!window._bfResult){toast('T\u00ednh th\u01b0\u1edfng tr\u01b0\u1edbc!',true);return;}
+  const r=window._bfResult;
+  const NL='\n';
+  let csv='Th\u00e0nh vi\u00ean,Username,C\u1ea5p b\u1eadc,KPI,X\u1ebfp lo\u1ea1i,L\u01b0\u01a1ng CB,Th\u01b0\u1edfng (VND)'+NL;
+  r.dist.forEach(d=>{csv+='"'+d.full_name+'","'+d.username+'","'+d.level+'",'+d.kpi_score.toFixed(1)+',"'+d.grade+'",'+d.base_salary+','+Math.round(d.share)+NL;});
+  csv+=',,,,,,'+Math.round(r.total)+NL;
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='bonus_'+r.periodKey+'.csv';a.click();
+}
+</script>
+
+<div id="sheetModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
+  <div style="background:var(--card);border-radius:14px;padding:24px 28px;max-width:480px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div><div style="font-size:15px;font-weight:700;color:var(--t)">📊 Đồng bộ Google Sheet</div>
+        <div style="font-size:11px;color:var(--m);margin-top:2px">Đẩy KPI + đầu việc tuần này lên Google Sheet</div></div>
+      <button onclick="closeSheetModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--m);line-height:1">×</button>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">Web App URL (từ Google Apps Script)</label>
+      <input class="inp" id="sheetModalUrl" style="width:100%;font-size:12px;box-sizing:border-box" placeholder="https://script.google.com/macros/s/AKfyc.../exec">
+      <div style="font-size:10px;color:var(--m);margin-top:4px">Chưa có URL? Xem hướng dẫn cài Apps Script trong folder <b>nsca-kpi-sheets</b></div>
+    </div>
+    <div id="sheetModalStatus" style="font-size:11px;min-height:18px;margin-bottom:12px;color:var(--m)"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn bp" style="flex:1" onclick="sheetModalSync('all')">📤 Đẩy KPI + Đầu việc</button>
+      <button class="btn bs" onclick="sheetModalSync('kpi')">📊 KPI</button>
+      <button class="btn bs" onclick="sheetModalSync('tasks')">📋 Đầu việc</button>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+      <button class="btn bs" style="font-size:11px" onclick="saveSheetUrlFromModal()">💾 Lưu URL</button>
+      <span id="sheetModalLink" style="font-size:11px"></span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
