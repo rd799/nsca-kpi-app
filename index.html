@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KPI Phòng R&D 2026</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 // ── KPI Quota config 3-tier (Kém / Tiêu chuẩn / Vượt) ───────────────
 const KQ_METRICS=[
@@ -576,25 +577,35 @@ select.inp{cursor:pointer}
         <button class="btn bp" id="manualKpiSubmitBtn" onclick="submitManualKpi()" style="font-weight:600">📤 Nộp tháng này</button>
       </div>
     </div>
-    <!-- Form nhập liệu nhân viên -->
-    <div id="manualKpiForm" style="background:var(--card2);border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid var(--b)">
-      <div style="font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Nhập số liệu tháng <span id="manualKpiMonth"></span></div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
-        <div><label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">💡 Sáng kiến cải tiến</label>
-          <input type="number" id="mk_sang_kien" min="0" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--fg);font-size:14px">
-          <div style="font-size:10px;color:var(--m);margin-top:2px">số sáng kiến trong tháng</div></div>
-        <div><label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">💰 Chi phí tiết kiệm (tr.VND)</label>
-          <input type="number" id="mk_chi_phi" min="0" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--fg);font-size:14px">
-          <div style="font-size:10px;color:var(--m);margin-top:2px">triệu đồng tiết kiệm được</div></div>
-        <div><label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">📈 Doanh thu SP mới (tr.VND)</label>
-          <input type="number" id="mk_doanh_thu" min="0" step="0.1" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--fg);font-size:14px">
-          <div style="font-size:10px;color:var(--m);margin-top:2px">từ sản phẩm mới trong tháng</div></div>
-        <div><label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">📄 Tài liệu kỹ thuật</label>
-          <input type="number" id="mk_tai_lieu" min="0" placeholder="0" style="width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--fg);font-size:14px">
-          <div style="font-size:10px;color:var(--m);margin-top:2px">số tài liệu ban hành trong tháng</div></div>
+    <!-- Import Excel -->
+    <div style="background:var(--card2);border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid var(--b)">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em">Import Excel tháng <span id="manualKpiMonth"></span></div>
+        <span style="flex:1"></span>
+        <button class="btn bs" onclick="downloadKpiTemplate()" style="font-size:12px">⬇️ Tải template Excel</button>
       </div>
-      <textarea id="mk_notes" placeholder="Ghi chú (tuỳ chọn): mô tả ngắn về sáng kiến, tài liệu..." rows="2"
-        style="width:100%;box-sizing:border-box;margin-top:10px;padding:8px 10px;border-radius:8px;border:1px solid var(--b);background:var(--bg);color:var(--fg);font-size:12px;resize:vertical"></textarea>
+      <!-- Drop zone -->
+      <div id="excelDropZone"
+        ondragover="event.preventDefault();this.style.borderColor='var(--blue)'"
+        ondragleave="this.style.borderColor='var(--b2)'"
+        ondrop="handleExcelDrop(event)"
+        style="border:2px dashed var(--b2);border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:border-color .2s"
+        onclick="document.getElementById('excelFileInput').click()">
+        <div style="font-size:28px;margin-bottom:6px">📂</div>
+        <div style="font-size:13px;font-weight:600;color:var(--fg);margin-bottom:3px">Kéo thả file Excel vào đây hoặc click để chọn</div>
+        <div style="font-size:11px;color:var(--m)">Định dạng: .xlsx · Sheet "KPI Tháng" · Xem template để biết cấu trúc</div>
+        <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleExcelFile(this.files[0])">
+      </div>
+      <!-- Preview table -->
+      <div id="excelPreview" style="margin-top:10px;display:none">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <div id="excelPreviewTitle" style="font-size:12px;font-weight:600;color:var(--green)"></div>
+          <span style="flex:1"></span>
+          <button class="btn" onclick="clearExcelPreview()" style="font-size:11px;padding:3px 8px">✕ Xoá</button>
+          <button class="btn bp" onclick="submitExcelData()" style="font-size:12px;font-weight:600">📤 Nộp tất cả</button>
+        </div>
+        <div id="excelPreviewTable" style="overflow-x:auto;font-size:12px"></div>
+      </div>
     </div>
     <!-- Danh sách chờ duyệt (admin only) -->
     <div id="manualKpiApproveSection" class="admin-only">
@@ -1833,26 +1844,95 @@ async function loadManualKpi(){
     el.innerHTML=h;
   }catch(e){el.innerHTML='<div style="color:var(--red);font-size:12px;padding:8px">Lỗi: '+e.message+'</div>';}
 }
-async function submitManualKpi(){
-  if(!window._myUsername){toast('Chưa đăng nhập!',true);return;}
-  const pk=manualKpiPeriodKey();
-  const body={
-    username:window._myUsername,
-    full_name:authState?.profile?.full_name||window._myUsername,
-    period_key:pk,
-    sang_kien:+document.getElementById('mk_sang_kien').value||0,
-    chi_phi:+document.getElementById('mk_chi_phi').value||0,
-    doanh_thu:+document.getElementById('mk_doanh_thu').value||0,
-    tai_lieu:+document.getElementById('mk_tai_lieu').value||0,
-    notes:document.getElementById('mk_notes').value.trim()||null,
+// ── Excel import ─────────────────────────────────────────────────────
+let _excelRows = [];
+
+function handleExcelDrop(e){
+  e.preventDefault();
+  document.getElementById('excelDropZone').style.borderColor='var(--b2)';
+  const file=e.dataTransfer?.files?.[0];
+  if(file) handleExcelFile(file);
+}
+function handleExcelFile(file){
+  if(!file) return;
+  if(!window.XLSX){toast('Đang tải thư viện Excel, thử lại sau giây lát...',true);return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const wb=XLSX.read(e.target.result,{type:'array'});
+      const sheetName=wb.SheetNames.find(n=>n.toLowerCase().includes('kpi')) || wb.SheetNames[0];
+      const ws=wb.Sheets[sheetName];
+      const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      // Skip rows until we find data row (period_key format YYYY-MM)
+      const dataRows=rows.filter(r=>String(r[0]||'').match(/^\d{4}-\d{2}$/) && String(r[1]||'').trim());
+      if(!dataRows.length){toast('Không tìm thấy dữ liệu! Kiểm tra cột A có định dạng YYYY-MM không.',true);return;}
+      _excelRows=dataRows.map(r=>({
+        period_key:String(r[0]).trim(),
+        username:String(r[1]).trim(),
+        full_name:String(r[2]||r[1]).trim(),
+        sang_kien:+r[3]||0,
+        chi_phi:+r[4]||0,
+        doanh_thu:+r[5]||0,
+        tai_lieu:+r[6]||0,
+        notes:String(r[7]||'').trim()||null,
+      }));
+      renderExcelPreview(file.name);
+    }catch(ex){toast('Lỗi đọc file: '+ex.message,true);}
   };
-  try{
-    await api('/api/rd/manual-kpi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    toast('✅ Đã nộp chỉ tiêu tháng '+pk+' — chờ manager duyệt');
-    const btn=document.getElementById('manualKpiSubmitBtn');
-    if(btn) btn.innerHTML='⏳ Chờ duyệt';
-    loadManualKpi();
-  }catch(e){toast('Lỗi nộp: '+e.message,true);}
+  reader.readAsArrayBuffer(file);
+}
+function renderExcelPreview(filename){
+  const el=document.getElementById('excelPreview');
+  const title=document.getElementById('excelPreviewTitle');
+  const tbl=document.getElementById('excelPreviewTable');
+  el.style.display='';
+  title.textContent=`✅ Đọc được ${_excelRows.length} dòng từ "${filename}"`;
+  const cols=['period_key','username','full_name','sang_kien','chi_phi','doanh_thu','tai_lieu','notes'];
+  const hdrs=['Tháng','Username','Họ tên','Sáng kiến','Chi phí TK','Doanh thu','Tài liệu','Ghi chú'];
+  let h=`<table style="width:100%;border-collapse:collapse"><thead><tr>${hdrs.map(h=>`<th style="padding:5px 8px;background:var(--card2);border:1px solid var(--b);font-size:11px;font-weight:700;color:var(--m);text-align:center">${h}</th>`).join('')}</tr></thead><tbody>`;
+  _excelRows.forEach(r=>{
+    h+=`<tr>${cols.map(k=>`<td style="padding:4px 8px;border:1px solid var(--b);font-size:12px;text-align:${['sang_kien','chi_phi','doanh_thu','tai_lieu'].includes(k)?'center':'left'}">${r[k]??''}</td>`).join('')}</tr>`;
+  });
+  h+='</tbody></table>';
+  tbl.innerHTML=h;
+}
+function clearExcelPreview(){
+  _excelRows=[];
+  document.getElementById('excelPreview').style.display='none';
+  document.getElementById('excelFileInput').value='';
+}
+async function submitExcelData(){
+  if(!_excelRows.length){toast('Không có dữ liệu!',true);return;}
+  let ok=0,fail=0;
+  for(const row of _excelRows){
+    try{
+      await api('/api/rd/manual-kpi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(row)});
+      ok++;
+    }catch(e){fail++;console.log('Submit fail:',row.username,e.message);}
+  }
+  toast(`✅ Nộp ${ok} thành công${fail?`, ❌ ${fail} lỗi`:''} — chờ manager duyệt`);
+  clearExcelPreview();
+  loadManualKpi();
+}
+function downloadKpiTemplate(){
+  if(!window.XLSX){toast('Đang tải thư viện Excel, thử lại sau giây lát...',true);return;}
+  const now=new Date();
+  const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const data=[
+    ['period_key','username','full_name','sang_kien','chi_phi','doanh_thu','tai_lieu','notes'],
+    ['// Tháng YYYY-MM','// Username Basework','// Họ tên','// Sáng kiến (số)','// Chi phí TK (triệu VND)','// Doanh thu SP mới (triệu VND)','// Tài liệu kỹ thuật (số)','// Ghi chú (tuỳ chọn)'],
+    [ym,'namph','Nguyễn Văn A',1,5,10,2,'Mẫu — xoá hàng này trước khi nộp'],
+    [ym,'rd01','Trần Thị B',0,3,0,1,''],
+  ];
+  const ws=XLSX.utils.aoa_to_sheet(data);
+  ws['!cols']=[{wch:13},{wch:14},{wch:22},{wch:14},{wch:20},{wch:22},{wch:18},{wch:35}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,'KPI Tháng',ws);
+  XLSX.writeFile(wb,`KPI_Manual_Template_${ym}.xlsx`);
+}
+
+async function submitManualKpi(){
+  toast('Dùng nút 📂 Import Excel để nộp file thay vì nhập tay.',false);
 }
 async function approveManualKpi(id,status){
   try{
@@ -3038,59 +3118,4 @@ async function loadUserList(){
 }
 async function updateUserField(email,field,value){
   try{
-    await api('/api/rd/user-profile/'+encodeURIComponent(email),{method:'PATCH',body:JSON.stringify({[field]:value})});
-    // Update in-memory cache so calcBonus() sees latest data immediately
-    const u=_bfUsers.find(u=>u.email===email);
-    if(u) u[field]=value;
-    toast('Đã cập nhật!');
-  }catch(e){toast('Lỗi: '+e.message,true);}
-}
-async function deleteUser(email){
-  if(!confirm('Xoá tài khoản '+email+'?'))return;
-  try{
-    await api('/api/rd/user-profile/'+encodeURIComponent(email),{method:'DELETE'});
-    toast('Đã xoá tài khoản!');
-    loadUserList();
-  }catch(e){toast('Lỗi: '+e.message,true);}
-}
-async function createUser(){
-  const email=document.getElementById('newUserEmail').value.trim();
-  const pass=document.getElementById('newUserPass').value;
-  const name=document.getElementById('newUserName').value.trim();
-  const uname=document.getElementById('newUserBase').value.trim();
-  const level=document.getElementById('newUserLevel')?.value||'mid';
-  const salary=+(document.getElementById('newUserSalary')?.value)||0;
-  const target=+(document.getElementById('newUserTarget')?.value)||70;
-  const role=document.getElementById('newUserRole').value;
-  if(!email||!pass){toast('Nhập email và mật khẩu!',true);return;}
-  try{
-    await api('/api/rd/create-user',{method:'POST',body:JSON.stringify({email,password:pass,full_name:name,username:uname,role,level,base_salary:salary,kpi_target:target})});
-    toast('Tạo tài khoản thành công!');
-    loadUserList();
-  }catch(e){toast('Lỗi: '+e.message,true);}
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// BONUS FUND
-// ═══════════════════════════════════════════════════════════════════════
-let _bfUsers=[];
-async function bfLoadUsers(){
-  try{const res=await api('/api/rd/user-list');_bfUsers=Array.isArray(res)?res:(res.users||[]);}catch(e){}
-}
-function bfPeriodChange(){
-  const type=document.getElementById('bfPeriodType')?.value||'month';
-  const sel=document.getElementById('bfPeriodKey');
-  if(!sel)return;
-  const opts=[];
-  const now=new Date();
-  if(type==='week'){
-    for(let i=0;i<8;i++){const d=new Date(now);d.setDate(d.getDate()-i*7);const y=d.getFullYear();const w=getWeekNum(d);opts.push({v:`${y}-W${String(w).padStart(2,'0')}`,l:`Tuần ${w}/${y}`});}
-  }else if(type==='month'){
-    for(let i=0;i<6;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);opts.push({v:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,l:`Tháng ${d.getMonth()+1}/${d.getFullYear()}`});}
-  }else if(type==='quarter'){
-    for(let i=0;i<4;i++){const d=new Date(now.getFullYear(),now.getMonth()-i*3,1);const q=Math.floor(d.getMonth()/3)+1;opts.push({v:`${d.getFullYear()}-Q${q}`,l:`Quý ${q}/${d.getFullYear()}`});}
-  }else{
-    for(let i=0;i<3;i++)opts.push({v:`${now.getFullYear()-i}`,l:`Năm ${now.getFullYear()-i}`});
-  }
-  sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('');
-  loadBfHisto
+    await api('/api/rd/user-profile/'+encodeURIComponent(email),{method:'PATCH',body:JSON.stringify({[field]:value})})
