@@ -85,6 +85,8 @@ async function loadKpiQuotaConfig(){
     const q=c.quotas||{};
     KQ_METRICS.forEach(m=>{
       ['quota','below','above','weight'].forEach(f=>{
+        // FIX: cập nhật m.def trực tiếp để calcKqScore dùng đúng config đã lưu
+        if(q[m.id]?.[f]!==undefined) m.def[f]=parseFloat(q[m.id][f])||0;
         const el=document.getElementById(`kq_${m.id}_${f}`);
         if(el&&q[m.id]?.[f]!==undefined)el.value=q[m.id][f];
       });
@@ -2654,6 +2656,7 @@ async function initApp(){
   if(authed){
     showApp();
     renderKqMetricRows(); // render metric rows sớm, trước khi tab config mở
+    loadKpiQuotaConfig();   // FIX: load saved weights vào m.def ngay khi khởi động
     initManualKpiForm();
     loadGradeConfigUI();
     const isAdmin=authState?.profile?.role==='admin';
