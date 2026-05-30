@@ -1081,6 +1081,10 @@ function calcKqScore(r, periodDays){
       const ontimeCnt=doneTasks.filter(t=>t.deadline&&t.completed_time&&t.completed_time<=t.deadline).length;
       actual=doneCnt>0?ontimeCnt/doneCnt*100:0; quotaScaled=cfg.quota??90;
     }else if(m.id==='overdue'){
+      // FIX: chưa xong task nào → không được điểm "không quá hạn"
+      if(doneTasks.length===0){
+        b[m.id]=cfg.below??50; total+=(cfg.below??50)*w; continue;
+      }
       actual=overdue/weeks; quotaScaled=cfg.quota??1;
     }else if(m.id==='hard'){
       actual=Math.round(doneTasks.length*((r.avg_difficulty||65)>70?0.5:0.2));
@@ -1088,7 +1092,8 @@ function calcKqScore(r, periodDays){
     }else if(m.id==='quality'){
       actual=r.failed_count!=null?r.failed_count/months:0; quotaScaled=cfg.quota??1;
     }else if(m.id==='attendance'){
-      actual=r.att_score!=null?r.att_score:100; quotaScaled=cfg.quota??90;
+      // FIX: không có dữ liệu → default = đúng định mức (neutral), không phải vượt
+      actual=r.att_score!=null?r.att_score:(cfg.quota??90); quotaScaled=cfg.quota??90;
     }else if(m.id==='unexcused'){
       actual=r.unexcused_count!=null?r.unexcused_count/months:0; quotaScaled=cfg.quota??0;
     }else if(m.id==='delegation'){
