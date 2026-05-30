@@ -577,32 +577,24 @@ select.inp{cursor:pointer}
         <button class="btn bp" id="manualKpiSubmitBtn" onclick="submitManualKpi()" style="font-weight:600">📤 Nộp tháng này</button>
       </div>
     </div>
-    <!-- Import Excel -->
+    <!-- Sync từ Google Sheet -->
     <div style="background:var(--card2);border-radius:10px;padding:14px;margin-bottom:14px;border:1px solid var(--b)">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-        <div style="font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em">Import Excel tháng <span id="manualKpiMonth"></span></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.06em">Đồng bộ từ Google Sheet — tháng <span id="manualKpiMonth"></span></div>
         <span style="flex:1"></span>
-        <button class="btn bs" onclick="downloadKpiTemplate()" style="font-size:12px">⬇️ Tải template Excel</button>
+        <button class="btn bp" onclick="syncManualKpiFromSheet()" style="font-size:12px;font-weight:600">🔄 Lấy từ Google Sheet</button>
       </div>
-      <!-- Drop zone -->
-      <div id="excelDropZone"
-        ondragover="event.preventDefault();this.style.borderColor='var(--blue)'"
-        ondragleave="this.style.borderColor='var(--b2)'"
-        ondrop="handleExcelDrop(event)"
-        style="border:2px dashed var(--b2);border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:border-color .2s"
-        onclick="document.getElementById('excelFileInput').click()">
-        <div style="font-size:28px;margin-bottom:6px">📂</div>
-        <div style="font-size:13px;font-weight:600;color:var(--fg);margin-bottom:3px">Kéo thả file Excel vào đây hoặc click để chọn</div>
-        <div style="font-size:11px;color:var(--m)">Định dạng: .xlsx · Sheet "KPI Tháng" · Xem template để biết cấu trúc</div>
-        <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleExcelFile(this.files[0])">
+      <div style="font-size:11px;color:var(--m);padding:8px 10px;background:var(--bg);border-radius:6px;border:1px solid var(--b);margin-bottom:8px">
+        📋 Sáng kiến · Chi phí TK · Doanh thu SP mới · Tài liệu kỹ thuật — đọc từ sheet <b>"KPI Tháng"</b> trong Google Sheet đã cấu hình.
+        <span style="color:var(--blue);cursor:pointer" onclick="sw('config')">⚙️ Cấu hình URL</span>
       </div>
-      <!-- Preview table -->
-      <div id="excelPreview" style="margin-top:10px;display:none">
+      <!-- Preview table (tái sử dụng) -->
+      <div id="excelPreview" style="margin-top:6px;display:none">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <div id="excelPreviewTitle" style="font-size:12px;font-weight:600;color:var(--green)"></div>
           <span style="flex:1"></span>
           <button class="btn" onclick="clearExcelPreview()" style="font-size:11px;padding:3px 8px">✕ Xoá</button>
-          <button class="btn bp" onclick="submitExcelData()" style="font-size:12px;font-weight:600">📤 Nộp tất cả</button>
+          <button class="btn bp" onclick="submitExcelData()" style="font-size:12px;font-weight:600">💾 Lưu vào hệ thống</button>
         </div>
         <div id="excelPreviewTable" style="overflow-x:auto;font-size:12px"></div>
       </div>
@@ -1899,7 +1891,35 @@ function renderExcelPreview(filename){
 function clearExcelPreview(){
   _excelRows=[];
   document.getElementById('excelPreview').style.display='none';
-  document.getElementById('excelFileInput').value='';
+  const fi=document.getElementById('excelFileInput');
+  if(fi)fi.value='';
+}
+async function syncManualKpiFromSheet(){
+  const url=(localStorage.getItem('rd_sheets_url')||'').trim();
+  if(!url){toast('Chưa cấu hình URL Google Sheet! Vào ⚙️ Cấu hình → nhập URL Apps Script.',true);return;}
+  const pk=manualKpiPeriodKey();
+  const btn=event?.target;
+  if(btn){btn.disabled=true;btn.textContent='⏳ Đang tải...';}
+  try{
+    const res=await fetch(`${url}?type=manual_kpi&month=${pk}`);
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    const rows=(data.rows||[]);
+    if(!rows.length){toast('Google Sheet không có dữ liệu tháng '+pk+'!',true);return;}
+    _excelRows=rows.map(r=>({
+      period_key:pk,
+      username:String(r.username||'').trim(),
+      full_name:String(r.full_name||r.username||'').trim(),
+      sang_kien:+r.sang_kien||0,
+      chi_phi:+r.chi_phi||0,
+      doanh_thu:+r.doanh_thu||0,
+      tai_lieu:+r.tai_lieu||0,
+      notes:String(r.notes||'').trim()||null,
+    })).filter(r=>r.username);
+    renderExcelPreview('Google Sheet ('+pk+')');
+    toast(`✅ Đọc được ${_excelRows.length} dòng từ Google Sheet`);
+  }catch(e){toast('Lỗi đọc Google Sheet: '+e.message,true);}
+  finally{if(btn){btn.disabled=false;btn.textContent='🔄 Lấy từ Google Sheet';}}
 }
 async function submitExcelData(){
   if(!_excelRows.length){toast('Không có dữ liệu!',true);return;}
