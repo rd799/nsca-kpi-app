@@ -9,19 +9,16 @@
 <script>
 // ── KPI Quota config 3-tier (Kém / Tiêu chuẩn / Vượt) ───────────────
 const KQ_METRICS=[
-  {id:'task',       icon:'📦', name:'Sản lượng task',      unit:'task/tuần',           dir:'high', def:{quota:5,  below:60, above:120, weight:30}},
-  {id:'ontime',     icon:'🎯', name:'Tỷ lệ đúng hạn',     unit:'% task đúng hạn',     dir:'high', def:{quota:90, below:60, above:110, weight:25}},
-  {id:'overdue',    icon:'⏰', name:'Kiểm soát quá hạn',  unit:'lần quá hạn/tuần',    dir:'low',  def:{quota:1,  below:50, above:110, weight:20}},
-  {id:'quality',    icon:'✅', name:'Chất lượng review',   unit:'điểm review TB',       dir:'high', def:{quota:80, below:60, above:110, weight:10}},
-  {id:'hard',       icon:'⚙️', name:'Xử lý task khó',     unit:'task khó/tuần',        dir:'high', def:{quota:1,  below:70, above:115, weight:10}},
-  {id:'attendance', icon:'📅', name:'Chuyên cần',          unit:'% ngày đúng giờ',      dir:'high', def:{quota:90, below:60, above:110, weight:5}},
-  {id:'unexcused',  icon:'🚫', name:'Vắng không phép',     unit:'lần/tháng',            dir:'low',  def:{quota:0,  below:50, above:110, weight:0}},
-  {id:'delegation', icon:'🤝', name:'Giao việc (leader)',  unit:'task giao/tuần',       dir:'high', def:{quota:3,  below:70, above:110, weight:0}},
-  // ── Chỉ tiêu thủ công (nhân viên nhập, manager duyệt) ──────────────────
-  {id:'sang_kien',  icon:'💡', name:'Sáng kiến cải tiến', unit:'sáng kiến/tháng',      dir:'high', def:{quota:1,  below:0,  above:110, weight:0}, manual:true},
-  {id:'chi_phi',    icon:'💰', name:'Chi phí tiết kiệm',  unit:'triệu VND/tháng',      dir:'high', def:{quota:5,  below:0,  above:110, weight:0}, manual:true},
-  {id:'doanh_thu',  icon:'📈', name:'Doanh thu SP mới',   unit:'triệu VND/tháng',      dir:'high', def:{quota:10, below:0,  above:110, weight:0}, manual:true},
-  {id:'tai_lieu',   icon:'📄', name:'Tài liệu kỹ thuật',  unit:'tài liệu/tháng',       dir:'high', def:{quota:2,  below:0,  above:110, weight:0}, manual:true},
+  // ── Tự động từ Basework ─────────────────────────────────────────────
+  {id:'task',       icon:'📦', name:'Sản lượng task',      unit:'task/tuần',        dir:'high', def:{quota:5,  below:60, above:120, weight:35}},
+  {id:'ontime',     icon:'🎯', name:'Tỷ lệ đúng hạn',     unit:'% task đúng hạn',  dir:'high', def:{quota:90, below:60, above:110, weight:30}},
+  {id:'overdue',    icon:'⏰', name:'Kiểm soát quá hạn',  unit:'lần quá hạn/tuần', dir:'low',  def:{quota:1,  below:50, above:110, weight:25}},
+  {id:'attendance', icon:'📅', name:'Chuyên cần',          unit:'% ngày đúng giờ',  dir:'high', def:{quota:90, below:60, above:110, weight:10}},
+  // ── Từ Google Sheet (admin nhập hàng tháng) ─────────────────────────
+  {id:'sang_kien',  icon:'💡', name:'Sáng kiến cải tiến', unit:'sáng kiến/tháng',  dir:'high', def:{quota:1,  below:0,  above:110, weight:0}, manual:true},
+  {id:'chi_phi',    icon:'💰', name:'Chi phí tiết kiệm',  unit:'triệu VND/tháng',  dir:'high', def:{quota:5,  below:0,  above:110, weight:0}, manual:true},
+  {id:'doanh_thu',  icon:'📈', name:'Doanh thu SP mới',   unit:'triệu VND/tháng',  dir:'high', def:{quota:10, below:0,  above:110, weight:0}, manual:true},
+  {id:'tai_lieu',   icon:'📄', name:'Tài liệu kỹ thuật',  unit:'tài liệu/tháng',   dir:'high', def:{quota:2,  below:0,  above:110, weight:0}, manual:true},
 ];
 
 function renderKqMetricRows(){
