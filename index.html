@@ -3118,4 +3118,244 @@ async function loadUserList(){
 }
 async function updateUserField(email,field,value){
   try{
-    await api('/api/rd/user-profile/'+encodeURIComponent(email),{method:'PATCH',body:JSON.stringify({[field]:value})})
+    await api('/api/rd/user-profile/'+encodeURIComponent(email),{method:'PATCH',body:JSON.stringify({[field]:value})});
+    // Update in-memory cache so calcBonus() sees latest data immediately
+    const u=_bfUsers.find(u=>u.email===email);
+    if(u) u[field]=value;
+    toast('Đã cập nhật!');
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+async function deleteUser(email){
+  if(!confirm('Xoá tài khoản '+email+'?'))return;
+  try{
+    await api('/api/rd/user-profile/'+encodeURIComponent(email),{method:'DELETE'});
+    toast('Đã xoá tài khoản!');
+    loadUserList();
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+async function createUser(){
+  const email=document.getElementById('newUserEmail').value.trim();
+  const pass=document.getElementById('newUserPass').value;
+  const name=document.getElementById('newUserName').value.trim();
+  const uname=document.getElementById('newUserBase').value.trim();
+  const level=document.getElementById('newUserLevel')?.value||'mid';
+  const salary=+(document.getElementById('newUserSalary')?.value)||0;
+  const target=+(document.getElementById('newUserTarget')?.value)||70;
+  const role=document.getElementById('newUserRole').value;
+  if(!email||!pass){toast('Nhập email và mật khẩu!',true);return;}
+  try{
+    await api('/api/rd/create-user',{method:'POST',body:JSON.stringify({email,password:pass,full_name:name,username:uname,role,level,base_salary:salary,kpi_target:target})});
+    toast('Tạo tài khoản thành công!');
+    loadUserList();
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// BONUS FUND
+// ═══════════════════════════════════════════════════════════════════════
+let _bfUsers=[];
+async function bfLoadUsers(){
+  try{const res=await api('/api/rd/user-list');_bfUsers=Array.isArray(res)?res:(res.users||[]);}catch(e){}
+}
+function bfPeriodChange(){
+  const type=document.getElementById('bfPeriodType')?.value||'month';
+  const sel=document.getElementById('bfPeriodKey');
+  if(!sel)return;
+  const opts=[];
+  const now=new Date();
+  if(type==='week'){
+    for(let i=0;i<8;i++){const d=new Date(now);d.setDate(d.getDate()-i*7);const y=d.getFullYear();const w=getWeekNum(d);opts.push({v:`${y}-W${String(w).padStart(2,'0')}`,l:`Tuần ${w}/${y}`});}
+  }else if(type==='month'){
+    for(let i=0;i<6;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);opts.push({v:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,l:`Tháng ${d.getMonth()+1}/${d.getFullYear()}`});}
+  }else if(type==='quarter'){
+    for(let i=0;i<4;i++){const d=new Date(now.getFullYear(),now.getMonth()-i*3,1);const q=Math.floor(d.getMonth()/3)+1;opts.push({v:`${d.getFullYear()}-Q${q}`,l:`Quý ${q}/${d.getFullYear()}`});}
+  }else{
+    for(let i=0;i<3;i++)opts.push({v:`${now.getFullYear()-i}`,l:`Năm ${now.getFullYear()-i}`});
+  }
+  sel.innerHTML=opts.map(o=>`<option value="${o.v}">${o.l}</option>`).join('');
+  loadBfHistory();
+}
+function getWeekNum(d){const s=new Date(d.getFullYear(),0,1);return Math.ceil(((d-s)/86400000+s.getDay()+1)/7);}
+async function calcBonus(){
+  const total=+(document.getElementById('bfTotal').value)||0;
+  const adminPct=+(document.getElementById('bfAdminPct').value)||0;
+  if(!total){toast('Nhập tổng quỹ thưởng!',true);return;}
+  // Always refresh user profiles to get latest level/salary settings
+  await bfLoadUsers();
+  const periodKey=document.getElementById('bfPeriodKey').value;
+  const periodType=document.getElementById('bfPeriodType').value;
+  // Load KPI for period — try snapshot DB first, fall back to current projData
+  let kpiMap={};
+  try{
+    const snaps=await api('/api/rd/snapshots?period_type='+periodType+'&year='+(periodKey.split('-')[0]||new Date().getFullYear()));
+    const matchSnap=(snaps||[]).find(s=>s.period_key===periodKey);
+    if(matchSnap?.results){
+      matchSnap.results.forEach(r=>{kpiMap[r.username]={score:r.score||0,full_name:r.full_name||r.username};});
+    }
+  }catch(e){}
+  // Fallback to current loaded data
+  if(!Object.keys(kpiMap).length&&projData?.results){
+    projData.results.forEach(r=>{const sc=(r.kq_score!=null)?{score:r.kq_score}:calcScore(r);kpiMap[r.username]={score:sc.score,full_name:r.full_name||r.username};});
+  }
+  const levelMul={junior:1.0,mid:1.5,senior:2.0,lead:2.5};
+  const memberPool=total*(1-adminPct/100);
+  const adminPool=total*adminPct/100;
+  // Build member list: primary from projData (real members in Baseworks),
+  // enriched with profile data (level/salary) from rd_user_profiles (_bfUsers)
+  let members=[];
+  const baseList=projData?.results?.length?projData.results:_bfUsers.filter(u=>u.username);
+  baseList.forEach(r=>{
+    // Match profile: by username first, then by email prefix (rd01@nsca.vn → 'rd01')
+    const prof=_bfUsers.find(u=>u.username&&u.username===r.username)
+      ||_bfUsers.find(u=>u.email&&u.email.split('@')[0]===r.username)
+      ||{};
+    members.push({username:r.username,full_name:r.full_name||prof.full_name||r.username,
+      email:prof.email||r.email||'',
+      level:prof.level||'mid',
+      base_salary:+(prof.base_salary)||0,
+      kpi_target:+(prof.kpi_target)||70});
+  });
+  if(!members.length){toast('Chưa có thành viên. Nhấn 🔄 Làm mới trước!',true);return;}
+  // compute weights
+  const weights=members.map(u=>{
+    const score=kpiMap[u.username]?.score||0;
+    const mul=levelMul[u.level||'mid']||1.5;
+    const sal=u.base_salary||0;
+    return{...u,score,mul,sal,weight:score*mul*(sal||1)};
+  });
+  const totalWeight=weights.reduce((s,w)=>s+w.weight,0)||1;
+  const dist=weights.map(w=>({
+    username:w.username,
+    full_name:w.full_name||kpiMap[w.username]?.full_name||w.username,
+    email:w.email,level:w.level||'mid',
+    base_salary:w.sal,kpi_score:w.score,
+    grade:gradeTag(w.score).replace(/<[^>]+>/g,''),
+    multiplier:w.mul,weight:w.weight,
+    share:totalWeight>0?(w.weight/totalWeight*memberPool):0
+  })).sort((a,b)=>b.share-a.share);
+  // Store for save
+  window._bfResult={periodType,periodKey,total,adminPct,adminPool,memberPool,dist,
+    gradeConfig:getGradeCfg()};
+  // Render
+  const gcfg=getGradeCfg();
+  let h='<table style="width:100%;font-size:12px;border-collapse:collapse">'
+    +'<thead><tr style="color:var(--m)"><th style="text-align:left;padding:4px 6px">Thành viên</th><th>Cấp bậc</th><th>KPI</th><th>Xếp loại</th><th>Lương CB</th><th>Hệ số</th><th style="text-align:right">Thưởng (VNĐ)</th></tr></thead><tbody>';
+  dist.forEach(d=>{
+    h+=`<tr style="border-top:1px solid var(--bdr)">
+      <td style="padding:5px 6px"><b>${d.full_name}</b><div style="font-size:10px;color:var(--m)">${d.username}</div></td>
+      <td style="text-align:center">${d.level}</td>
+      <td style="text-align:center;font-weight:700">${d.kpi_score.toFixed(1)}</td>
+      <td style="text-align:center">${gradeTag(d.kpi_score)}</td>
+      <td style="text-align:right">${d.base_salary.toLocaleString('vi-VN')}</td>
+      <td style="text-align:center">${d.multiplier}×</td>
+      <td style="text-align:right;font-weight:700;color:var(--green)">${Math.round(d.share).toLocaleString('vi-VN')}</td>
+    </tr>`;
+  });
+  if(adminPool>0){
+    h+=`<tr style="border-top:2px solid var(--bdr);background:var(--card2)">
+      <td colspan="6" style="padding:5px 6px;color:var(--m)">Phần admin/quản lý (${adminPct}%)</td>
+      <td style="text-align:right;font-weight:700;color:var(--blue)">${Math.round(adminPool).toLocaleString('vi-VN')}</td>
+    </tr>`;
+  }
+  h+=`<tr style="border-top:2px solid var(--bdr);font-weight:700">
+    <td colspan="6" style="padding:5px 6px">Tổng cộng</td>
+    <td style="text-align:right;color:var(--t)">${Math.round(total).toLocaleString('vi-VN')}</td>
+  </tr>`;
+  h+='</tbody></table>';
+  document.getElementById('bfResultTable').innerHTML=h;
+  document.getElementById('bfResultCard').style.display='';
+  toast('Đã tính xong!');
+}
+async function saveBonusFund(){
+  if(!window._bfResult){toast('Tính thưởng trước!',true);return;}
+  const r=window._bfResult;
+  const notes=document.getElementById('bfNotes').value;
+  try{
+    await api('/api/rd/bonus-fund',{method:'POST',body:JSON.stringify({
+      period_type:r.periodType,period_key:r.periodKey,
+      period_label:document.getElementById('bfPeriodKey').options[document.getElementById('bfPeriodKey').selectedIndex]?.text||r.periodKey,
+      total_amount:r.total,admin_percent:r.adminPct,admin_amount:r.adminPool,
+      member_amount:r.memberPool,distribution:r.dist,grade_config:r.gradeConfig,notes
+    })});
+    toast('Đã lưu quỹ thưởng!');
+    loadBfHistory();
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+async function loadBfHistory(){
+  const el=document.getElementById('bfHistList');
+  if(!el)return;
+  try{
+    const data=await api('/api/rd/bonus-funds');
+    const list=Array.isArray(data)?data:(data.funds||[]);
+    if(!list.length){el.innerHTML='<div style="color:var(--m);font-size:12px">Chưa có lịch sử.</div>';return;}
+    el.innerHTML=list.map(f=>`
+      <div class="bf-hist-item" onclick="loadBfDetail('${f.period_key}')">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><b>${f.period_label||f.period_key}</b> <span style="font-size:11px;color:var(--m)">(${f.period_type})</span></div>
+          <div style="font-weight:700;color:var(--green)">${(+f.total_amount||0).toLocaleString('vi-VN')} ₫</div>
+        </div>
+        <div style="font-size:11px;color:var(--m);margin-top:2px">${f.notes||''} · ${new Date(f.saved_at).toLocaleDateString('vi-VN')}</div>
+      </div>`).join('');
+  }catch(e){el.innerHTML='<div style="color:var(--red)">❌ '+e.message+'</div>';}
+}
+async function loadBfDetail(periodKey){
+  try{
+    const f=await api('/api/rd/bonus-fund/'+encodeURIComponent(periodKey));
+    const dist=f.distribution||[];
+    document.getElementById('bfResultTable').innerHTML=`<div style="font-size:13px;font-weight:600;margin-bottom:8px">${f.period_label||periodKey}</div>`
+      +'<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:var(--m)"><th style="text-align:left;padding:4px 6px">Thành viên</th><th>KPI</th><th>Xếp loại</th><th style="text-align:right">Thưởng</th></tr></thead><tbody>'
+      +dist.map(d=>`<tr style="border-top:1px solid var(--bdr)"><td style="padding:5px 6px"><b>${d.full_name}</b></td><td style="text-align:center">${(+d.kpi_score||0).toFixed(1)}</td><td style="text-align:center"><span class="grade grade-${d.grade}">${d.grade}</span></td><td style="text-align:right;font-weight:700;color:var(--green)">${Math.round(+d.share||0).toLocaleString('vi-VN')} ₫</td></tr>`).join('')
+      +'</tbody></table>';
+    document.getElementById('bfResultCard').style.display='';
+    sw('bonus');
+  }catch(e){toast('Lỗi: '+e.message,true);}
+}
+function toggleTheme(){
+  const isLight=document.documentElement.classList.toggle('light');
+  localStorage.setItem('rd_theme',isLight?'light':'dark');
+  document.getElementById('themeBtn').textContent=isLight?'🌙':'☀️';
+}
+function initTheme(){
+  const saved=localStorage.getItem('rd_theme');
+  if(saved==='light'){document.documentElement.classList.add('light');document.getElementById('themeBtn').textContent='🌙';}
+}
+async function exportBonusExcel(){
+  if(!window._bfResult){toast('Tính thưởng trước!',true);return;}
+  const r=window._bfResult;
+  const NL='\n';
+  let csv='Thành viên,Username,Cấp bậc,KPI,Xếp loại,Lương CB,Thưởng (VND)'+NL;
+  r.dist.forEach(d=>{csv+='"'+d.full_name+'","'+d.username+'","'+d.level+'",'+d.kpi_score.toFixed(1)+',"'+d.grade+'",'+d.base_salary+','+Math.round(d.share)+NL;});
+  csv+=',,,,,,'+Math.round(r.total)+NL;
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='bonus_'+r.periodKey+'.csv';a.click();
+}
+</script>
+
+<div id="sheetModal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center">
+  <div style="background:var(--card);border-radius:14px;padding:24px 28px;max-width:480px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div><div style="font-size:15px;font-weight:700;color:var(--t)">📊 Đồng bộ Google Sheet</div>
+        <div style="font-size:11px;color:var(--m);margin-top:2px">Đẩy KPI + đầu việc tuần này lên Google Sheet</div></div>
+      <button onclick="closeSheetModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--m);line-height:1">×</button>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;color:var(--m);display:block;margin-bottom:4px">Web App URL (từ Google Apps Script)</label>
+      <input class="inp" id="sheetModalUrl" style="width:100%;font-size:12px;box-sizing:border-box" placeholder="https://script.google.com/macros/s/AKfyc.../exec">
+      <div style="font-size:10px;color:var(--m);margin-top:4px">Chưa có URL? Xem hướng dẫn cài Apps Script trong folder <b>nsca-kpi-sheets</b></div>
+    </div>
+    <div id="sheetModalStatus" style="font-size:11px;min-height:18px;margin-bottom:12px;color:var(--m)"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn bp" style="flex:1" onclick="sheetModalSync('all')">📤 Đẩy KPI + Đầu việc</button>
+      <button class="btn bs" onclick="sheetModalSync('kpi')">📊 KPI</button>
+      <button class="btn bs" onclick="sheetModalSync('tasks')">📋 Đầu việc</button>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+      <button class="btn bs" style="font-size:11px" onclick="saveSheetUrlFromModal()">💾 Lưu URL</button>
+      <span id="sheetModalLink" style="font-size:11px"></span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
